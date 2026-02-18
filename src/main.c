@@ -300,6 +300,16 @@ static Mat4 mat4_ortho(float left, float right, float bottom, float top,
   return out;
 }
 
+static Mat4 mat4_inset_world_to_clip(int w, int h, double cx, double cy,
+                                     double half_world) {
+  const double aspect = (h > 0) ? ((double)w / (double)h) : 1.0;
+  const float half_h = (float)half_world;
+  const float half_w = (float)(half_world * aspect);
+  Mat4 proj = mat4_ortho(-half_w, half_w, -half_h, half_h, -1.0f, 1.0f);
+  Mat4 view = mat4_translate((float)-cx, (float)-cy, 0.0f);
+  return mat4_mul(proj, view);
+}
+
 static void mat4_mul_vec4(const Mat4 *m, float x, float y, float z, float w,
                           float out4[4]) {
   out4[0] = m->m[0] * x + m->m[4] * y + m->m[8] * z + m->m[12] * w;
@@ -1817,20 +1827,57 @@ int main(int argc, char **argv) {
     // Build line vertex buffer (trails + vectors + spawn preview).
     size_t line_count = 0;
     if (show_trails) {
+      const Trail *follow_t = NULL;
+      const Body *follow_now = NULL;
+      float follow_base_x = 0.0f;
+      float follow_base_y = 0.0f;
+      float follow_base_z = 0.0f;
+      if (follow_selected && selected_id) {
+        follow_t = trails_find(trails, trail_count, selected_id);
+        follow_now = find_body_by_id(&sim, selected_id);
+        if (follow_now) {
+          // Trails are computed in the followed body's inertial frame at each
+          // sample time, but rendering still uses a camera centered on the
+          // followed body *now*. Add the followed body's current position back
+          // so the relative trail stays spatially attached in view.
+          follow_base_x = (float)follow_now->x;
+          follow_base_y = (float)follow_now->y;
+          follow_base_z = (float)follow_now->z;
+        }
+      }
       for (size_t ti = 0; ti < trail_count; ti++) {
         const Trail *t = &trails[ti];
         const Body *b = find_body_by_id(&sim, t->id);
         if (!b || t->count < 2)
           continue;
+        if (follow_t && t->id == selected_id)
+          continue;
 
-        const size_t start = (t->head + TRAIL_LEN - t->count) % TRAIL_LEN;
-        for (size_t k = 0; k + 1 < t->count; k++) {
+        const size_t count =
+            follow_t ? (size_t)fmin((double)t->count, (double)follow_t->count)
+                     : t->count;
+        if (count < 2)
+          continue;
+
+        const size_t start = (t->head + TRAIL_LEN - count) % TRAIL_LEN;
+        const size_t fstart =
+            follow_t ? ((follow_t->head + TRAIL_LEN - count) % TRAIL_LEN) : 0;
+        for (size_t k = 0; k + 1 < count; k++) {
           const size_t i0 = (start + k) % TRAIL_LEN;
           const size_t i1 = (start + k + 1) % TRAIL_LEN;
-          const float age0 = (float)k / (float)(t->count - 1);
-          const float age1 = (float)(k + 1) / (float)(t->count - 1);
+          const size_t f0 = follow_t ? ((fstart + k) % TRAIL_LEN) : 0;
+          const size_t f1 = follow_t ? ((fstart + k + 1) % TRAIL_LEN) : 0;
+          const float age0 = (float)k / (float)(count - 1);
+          const float age1 = (float)(k + 1) / (float)(count - 1);
           const float a0 = 0.55f * age0 * age0;
           const float a1 = 0.55f * age1 * age1;
+
+          const float x0 = follow_t ? (t->x[i0] - follow_t->x[f0] + follow_base_x) : t->x[i0];
+          const float y0 = follow_t ? (t->y[i0] - follow_t->y[f0] + follow_base_y) : t->y[i0];
+          const float z0 = follow_t ? (t->z[i0] - follow_t->z[f0] + follow_base_z) : t->z[i0];
+          const float x1 = follow_t ? (t->x[i1] - follow_t->x[f1] + follow_base_x) : t->x[i1];
+          const float y1 = follow_t ? (t->y[i1] - follow_t->y[f1] + follow_base_y) : t->y[i1];
+          const float z1 = follow_t ? (t->z[i1] - follow_t->z[f1] + follow_base_z) : t->z[i1];
 
           if (line_count + 2 > line_cpu_cap) {
             size_t next = line_cpu_cap ? (line_cpu_cap * 2) : 16384;
@@ -1844,16 +1891,16 @@ int main(int argc, char **argv) {
             line_cpu_cap = next;
           }
 
-          line_cpu[line_count++] = (LineVertex){.x = t->x[i0],
-                                                .y = t->y[i0],
-                                                .z = t->z[i0],
+          line_cpu[line_count++] = (LineVertex){.x = x0,
+                                                .y = y0,
+                                                .z = z0,
                                                 .r = b->r,
                                                 .g = b->g,
                                                 .b = b->b,
                                                 .a = a0};
-          line_cpu[line_count++] = (LineVertex){.x = t->x[i1],
-                                                .y = t->y[i1],
-                                                .z = t->z[i1],
+          line_cpu[line_count++] = (LineVertex){.x = x1,
+                                                .y = y1,
+                                                .z = z1,
                                                 .r = b->r,
                                                 .g = b->g,
                                                 .b = b->b,
@@ -2180,6 +2227,165 @@ int main(int argc, char **argv) {
                         GL_NEAREST);
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
       glViewport(0, 0, dw, dh);
+    }
+
+    // Inertial orbit inset: show selected body's trail in a Sun-centered frame
+    // while following (main view becomes body-centered).
+    if (follow_selected && selected_id) {
+      const Body *sel = find_body_by_id(&sim, selected_id);
+      const Body *center = find_heaviest_body(&sim);
+      Trail *t = trails_find(trails, trail_count, selected_id);
+      if (sel && center && t && t->count >= 2) {
+        const int inset_w = (int)clampd((double)dw * 0.28, 220.0, 420.0);
+        const int inset_h = inset_w;
+        const int inset_x = dw - inset_w - 14;
+        const int inset_y = dh - inset_h - 14;
+
+        // Determine a suitable scale from the trail extents.
+        double max_r = 1.0;
+        for (size_t k = 0; k < t->count; k++) {
+          const size_t idx = (t->head + TRAIL_LEN - t->count + k) % TRAIL_LEN;
+          const double dx = (double)t->x[idx] - center->x;
+          const double dy = (double)t->y[idx] - center->y;
+          const double r = sqrt(dx * dx + dy * dy);
+          if (r > max_r)
+            max_r = r;
+        }
+        max_r = fmax(max_r, 0.01);
+        const double half_world = max_r * 1.15;
+
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(inset_x, inset_y, inset_w, inset_h);
+        glClearColor(0.02f, 0.02f, 0.03f, 0.85f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_SCISSOR_TEST);
+
+        glViewport(inset_x, inset_y, inset_w, inset_h);
+        Mat4 inset_w2c = mat4_inset_world_to_clip(inset_w, inset_h, center->x,
+                                                  center->y, half_world);
+
+        // Build line list: orbit trail + small cross for Sun and current pos.
+        size_t inset_line_count = 0;
+        const size_t needed = (t->count - 1) * 2 + 8;
+        if (needed > line_cpu_cap) {
+          size_t next = line_cpu_cap ? line_cpu_cap : 16384;
+          while (next < needed)
+            next *= 2;
+          LineVertex *nl = (LineVertex *)realloc(line_cpu, next * sizeof(LineVertex));
+          if (nl) {
+            line_cpu = nl;
+            line_cpu_cap = next;
+          }
+        }
+
+        if (needed <= line_cpu_cap) {
+          for (size_t k = 0; k + 1 < t->count; k++) {
+            const size_t i0 = (t->head + TRAIL_LEN - t->count + k) % TRAIL_LEN;
+            const size_t i1 = (t->head + TRAIL_LEN - t->count + k + 1) % TRAIL_LEN;
+            line_cpu[inset_line_count++] = (LineVertex){.x = t->x[i0],
+                                                        .y = t->y[i0],
+                                                        .z = 0.0f,
+                                                        .r = 0.6f,
+                                                        .g = 0.8f,
+                                                        .b = 1.0f,
+                                                        .a = 0.75f};
+            line_cpu[inset_line_count++] = (LineVertex){.x = t->x[i1],
+                                                        .y = t->y[i1],
+                                                        .z = 0.0f,
+                                                        .r = 0.6f,
+                                                        .g = 0.8f,
+                                                        .b = 1.0f,
+                                                        .a = 0.75f};
+          }
+
+          const float cross = (float)(half_world * 0.03);
+          const float cx = (float)center->x;
+          const float cy = (float)center->y;
+          const float px = (float)sel->x;
+          const float py = (float)sel->y;
+
+          // Sun cross
+          line_cpu[inset_line_count++] = (LineVertex){.x = cx - cross,
+                                                      .y = cy,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 0.9f,
+                                                      .b = 0.4f,
+                                                      .a = 0.9f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = cx + cross,
+                                                      .y = cy,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 0.9f,
+                                                      .b = 0.4f,
+                                                      .a = 0.9f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = cx,
+                                                      .y = cy - cross,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 0.9f,
+                                                      .b = 0.4f,
+                                                      .a = 0.9f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = cx,
+                                                      .y = cy + cross,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 0.9f,
+                                                      .b = 0.4f,
+                                                      .a = 0.9f};
+
+          // Current body cross
+          line_cpu[inset_line_count++] = (LineVertex){.x = px - cross,
+                                                      .y = py,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 1.0f,
+                                                      .b = 1.0f,
+                                                      .a = 0.95f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = px + cross,
+                                                      .y = py,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 1.0f,
+                                                      .b = 1.0f,
+                                                      .a = 0.95f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = px,
+                                                      .y = py - cross,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 1.0f,
+                                                      .b = 1.0f,
+                                                      .a = 0.95f};
+          line_cpu[inset_line_count++] = (LineVertex){.x = px,
+                                                      .y = py + cross,
+                                                      .z = 0.0f,
+                                                      .r = 1.0f,
+                                                      .g = 1.0f,
+                                                      .b = 1.0f,
+                                                      .a = 0.95f};
+        }
+
+        if (inset_line_count) {
+          glUseProgram(line_prog);
+          glUniformMatrix4fv(luWorldToClip, 1, GL_FALSE, inset_w2c.m);
+          glBindVertexArray(line_vao);
+          glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+          glBufferData(GL_ARRAY_BUFFER,
+                       (GLsizeiptr)(inset_line_count * sizeof(LineVertex)),
+                       line_cpu, GL_STREAM_DRAW);
+          glEnable(GL_BLEND);
+          glDrawArrays(GL_LINES, 0, (GLsizei)inset_line_count);
+          glBindVertexArray(0);
+          glUseProgram(0);
+        }
+
+        // Restore main viewport for screen-space overlays.
+        glViewport(0, 0, dw, dh);
+        glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+      }
     }
 
     frames_since_title++;
