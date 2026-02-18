@@ -30,6 +30,11 @@ enum {
 //   2k_neptune.jpg
 GLuint textures_create_planet_array(const char *dir);
 
+// Tries to load an RGBA image into a GL_TEXTURE_2D from `dir`.
+// Returns 0 if none of the candidate files can be loaded.
+// Texture is created with linear filtering and clamp-to-edge.
+GLuint textures_try_load_rgba2d(const char *dir, const char *label, const char *const *candidates, int *out_w, int *out_h);
+
 // Loads a Radiance .hdr equirectangular environment map into a GL_TEXTURE_2D.
 // Returns 0 if the file can't be loaded.
 GLuint textures_load_hdr_equirect(const char *path);

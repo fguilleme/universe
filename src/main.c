@@ -712,6 +712,17 @@ typedef struct {
   float spin_phase;
 } ParticleGPU;
 
+typedef struct {
+  float x;
+  float y;
+  float z;
+  float outer;
+  float inner_ratio;
+  float nx;
+  float ny;
+  float nz;
+} RingGPU;
+
 enum {
   TRAIL_LEN = 2048,
 };
@@ -789,6 +800,75 @@ static void trails_compact_live(Trail *trails, size_t *trail_count,
     }
   }
   *trail_count = out;
+}
+
+typedef struct {
+  char name_lc[32];
+  GLuint tex;
+  bool radial_strip;
+  bool attempted;
+} RingTexCache;
+
+static void str_to_lower_ascii(char *dst, size_t cap, const char *src) {
+  if (!cap)
+    return;
+  size_t i = 0;
+  for (; src[i] && i + 1 < cap; i++) {
+    char c = src[i];
+    if (c >= 'A' && c <= 'Z')
+      c = (char)(c - 'A' + 'a');
+    dst[i] = c;
+  }
+  dst[i] = 0;
+}
+
+static GLuint ring_texture_for_body(const char *assets_dir, RingTexCache **cache,
+                                    size_t *count, size_t *cap,
+                                    const Body *b, bool *out_radial_strip) {
+  char name_lc[32];
+  str_to_lower_ascii(name_lc, sizeof(name_lc), b->name);
+  if (!name_lc[0])
+    return 0;
+
+  for (size_t i = 0; i < *count; i++) {
+    if (strcmp((*cache)[i].name_lc, name_lc) == 0) {
+      if (out_radial_strip)
+        *out_radial_strip = (*cache)[i].radial_strip;
+      return (*cache)[i].tex;
+    }
+  }
+
+  if (*count == *cap) {
+    size_t next = *cap ? (*cap * 2) : 16;
+    RingTexCache *nc = (RingTexCache *)realloc(*cache, next * sizeof(RingTexCache));
+    if (!nc)
+      return 0;
+    *cache = nc;
+    *cap = next;
+  }
+
+  RingTexCache *e = &(*cache)[(*count)++];
+  memset(e, 0, sizeof(*e));
+  strncpy(e->name_lc, name_lc, sizeof(e->name_lc) - 1);
+  e->name_lc[sizeof(e->name_lc) - 1] = 0;
+  e->attempted = true;
+
+  char c0[64], c1[64], c2[64], c3[64], c4[64];
+  snprintf(c0, sizeof(c0), "2k_%s_ring_alpha.png", name_lc);
+  snprintf(c1, sizeof(c1), "2k_%s_ring_alpha.jpg", name_lc);
+  snprintf(c2, sizeof(c2), "%s_ring_alpha.png", name_lc);
+  snprintf(c3, sizeof(c3), "%s_ring.png", name_lc);
+  snprintf(c4, sizeof(c4), "2k_%s_ring.png", name_lc);
+  const char *cands[] = {c0, c1, c2, c3, c4, NULL};
+
+  char label[80];
+  snprintf(label, sizeof(label), "%s rings", b->name);
+  int w = 0, h = 0;
+  e->tex = textures_try_load_rgba2d(assets_dir, label, cands, &w, &h);
+  e->radial_strip = (e->tex && h > 0 && w >= h * 2);
+  if (out_radial_strip)
+    *out_radial_strip = e->radial_strip;
+  return e->tex;
 }
 
 static void trail_push(Trail *t, float x, float y, float z) {
@@ -993,6 +1073,20 @@ int main(int argc, char **argv) {
   GLint tuFont = glGetUniformLocation(text_prog, "uFont");
   GLint tuColor = glGetUniformLocation(text_prog, "uColor");
 
+  // Ring program
+  GLuint rvs = glutil_compile_shader(GL_VERTEX_SHADER, kRingsVS);
+  GLuint rfs = glutil_compile_shader(GL_FRAGMENT_SHADER, kRingsFS);
+  if (!rvs || !rfs)
+    return 1;
+  GLuint ring_prog = glutil_link_program(rvs, rfs);
+  glDeleteShader(rvs);
+  glDeleteShader(rfs);
+  if (!ring_prog)
+    return 1;
+  GLint ruWorldToClip = glGetUniformLocation(ring_prog, "uWorldToClip");
+  GLint ruRingTex = glGetUniformLocation(ring_prog, "uRingTex");
+  GLint ruRadialStrip = glGetUniformLocation(ring_prog, "uRadialStrip");
+
   // Line program (trails, vectors)
   GLuint lvs = glutil_compile_shader(GL_VERTEX_SHADER, kLinesVS);
   GLuint lfs = glutil_compile_shader(GL_FRAGMENT_SHADER, kLinesFS);
@@ -1065,6 +1159,26 @@ int main(int argc, char **argv) {
                         (void *)offsetof(TextVertex, u));
   glBindVertexArray(0);
 
+  GLuint ring_vao = 0, ring_vbo = 0;
+  glGenVertexArrays(1, &ring_vao);
+  glGenBuffers(1, &ring_vbo);
+  glBindVertexArray(ring_vao);
+  glBindBuffer(GL_ARRAY_BUFFER, ring_vbo);
+  glBufferData(GL_ARRAY_BUFFER, 1, NULL, GL_STREAM_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RingGPU), (void *)offsetof(RingGPU, x));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(RingGPU), (void *)offsetof(RingGPU, outer));
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(RingGPU), (void *)offsetof(RingGPU, inner_ratio));
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(RingGPU), (void *)offsetof(RingGPU, nx));
+  glVertexAttribDivisor(0, 1);
+  glVertexAttribDivisor(1, 1);
+  glVertexAttribDivisor(2, 1);
+  glVertexAttribDivisor(3, 1);
+  glBindVertexArray(0);
+
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1103,6 +1217,11 @@ int main(int argc, char **argv) {
   }
   glUseProgram(text_prog);
   glUniform1i(tuFont, 2);
+  glUseProgram(0);
+
+  glUseProgram(ring_prog);
+  glUniform1i(ruRingTex, 3);
+  glUniform1i(ruRadialStrip, 0);
   glUseProgram(0);
 
   Sim sim;
@@ -1181,6 +1300,16 @@ int main(int argc, char **argv) {
 
   ParticleGPU *particle_cpu = NULL;
   size_t particle_cpu_cap = 0;
+
+  RingGPU *ring_cpu = NULL;
+  GLuint *ring_tex_cpu = NULL;
+  uint8_t *ring_radial_cpu = NULL;
+  size_t ring_cpu_cap = 0;
+  size_t ring_count = 0;
+
+  RingTexCache *ring_cache = NULL;
+  size_t ring_cache_count = 0;
+  size_t ring_cache_cap = 0;
 
   LineVertex *line_cpu = NULL;
   size_t line_cpu_cap = 0;
@@ -1901,6 +2030,75 @@ int main(int argc, char **argv) {
       particle_cpu[i].spin_phase = b->spin_phase_rad;
     }
 
+    // Build ring buffer (only bodies with a ring texture).
+    ring_count = 0;
+    for (size_t i = 0; i < sim.count; i++) {
+      const Body *b = &sim.bodies[i];
+      bool radial_strip = false;
+      GLuint ring_tex = ring_texture_for_body(assets_dir, &ring_cache, &ring_cache_count, &ring_cache_cap, b, &radial_strip);
+      if (!ring_tex)
+        continue;
+
+      if (ring_count + 1 > ring_cpu_cap) {
+        size_t next = ring_cpu_cap ? (ring_cpu_cap * 2) : 16;
+        while (next < ring_count + 1)
+          next *= 2;
+        RingGPU *nr = (RingGPU *)malloc(next * sizeof(RingGPU));
+        GLuint *nt = (GLuint *)malloc(next * sizeof(GLuint));
+        uint8_t *nm = (uint8_t *)malloc(next * sizeof(uint8_t));
+        if (!nr || !nt || !nm) {
+          free(nr);
+          free(nt);
+          free(nm);
+          break;
+        }
+        if (ring_cpu)
+          memcpy(nr, ring_cpu, ring_count * sizeof(RingGPU));
+        if (ring_tex_cpu)
+          memcpy(nt, ring_tex_cpu, ring_count * sizeof(GLuint));
+        if (ring_radial_cpu)
+          memcpy(nm, ring_radial_cpu, ring_count * sizeof(uint8_t));
+        free(ring_cpu);
+        free(ring_tex_cpu);
+        free(ring_radial_cpu);
+        ring_cpu = nr;
+        ring_tex_cpu = nt;
+        ring_radial_cpu = nm;
+        ring_cpu_cap = next;
+      }
+
+      const double pr = b->render_radius * render_radius_scale;
+      const double outer = pr * 2.5;
+      const double inner = pr * 1.2;
+
+      // Use the same tilt convention as the planet shader.
+      const float tilt = b->tilt_rad;
+      float nx = 0.0f;
+      float ny = cosf(tilt);
+      float nz = sinf(tilt);
+      const float nlen = sqrtf(nx * nx + ny * ny + nz * nz);
+      if (nlen > 1e-8f) {
+        nx /= nlen;
+        ny /= nlen;
+        nz /= nlen;
+      } else {
+        nx = 0.0f;
+        ny = 1.0f;
+        nz = 0.0f;
+      }
+
+      ring_cpu[ring_count++] = (RingGPU){.x = (float)b->x,
+                                         .y = (float)b->y,
+                                         .z = (float)b->z,
+                                         .outer = (float)outer,
+                                         .inner_ratio = (float)(inner / outer),
+                                         .nx = nx,
+                                         .ny = ny,
+                                         .nz = nz};
+      ring_tex_cpu[ring_count - 1] = ring_tex;
+      ring_radial_cpu[ring_count - 1] = radial_strip ? 1u : 0u;
+    }
+
     glUseProgram(particle_prog);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, tex_array);
@@ -1932,6 +2130,31 @@ int main(int argc, char **argv) {
     glDepthMask(GL_TRUE);
     glBindVertexArray(0);
     glUseProgram(0);
+
+    if (ring_count) {
+      glUseProgram(ring_prog);
+      glUniformMatrix4fv(ruWorldToClip, 1, GL_FALSE, world_to_clip.m);
+      glActiveTexture(GL_TEXTURE3);
+
+      glBindVertexArray(ring_vao);
+      glBindBuffer(GL_ARRAY_BUFFER, ring_vbo);
+
+      glEnable(GL_BLEND);
+      glDepthMask(GL_FALSE);
+      glDepthFunc(GL_LEQUAL);
+      for (size_t i = 0; i < ring_count; i++) {
+        glBindTexture(GL_TEXTURE_2D, ring_tex_cpu[i]);
+        glUniform1i(ruRadialStrip, ring_radial_cpu[i] ? 1 : 0);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(RingGPU), &ring_cpu[i],
+                     GL_STREAM_DRAW);
+        glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, 1);
+      }
+      glDepthFunc(GL_LESS);
+      glDepthMask(GL_TRUE);
+
+      glBindVertexArray(0);
+      glUseProgram(0);
+    }
 
     if (use_offscreen_scene_fbo) {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, scene_fbo);
@@ -2300,10 +2523,22 @@ int main(int argc, char **argv) {
   sim_destroy(&sim);
   free(trails);
   free(particle_cpu);
+  free(ring_cpu);
+  free(ring_tex_cpu);
+  free(ring_radial_cpu);
+  if (ring_cache) {
+    for (size_t i = 0; i < ring_cache_count; i++) {
+      if (ring_cache[i].tex)
+        glDeleteTextures(1, &ring_cache[i].tex);
+    }
+  }
+  free(ring_cache);
   free(line_cpu);
   free(text_cpu);
   glDeleteBuffers(1, &particle_vbo);
   glDeleteVertexArrays(1, &particle_vao);
+  glDeleteBuffers(1, &ring_vbo);
+  glDeleteVertexArrays(1, &ring_vao);
   glDeleteBuffers(1, &line_vbo);
   glDeleteVertexArrays(1, &line_vao);
   glDeleteVertexArrays(1, &bg_vao);
@@ -2317,6 +2552,7 @@ int main(int argc, char **argv) {
   glDeleteProgram(line_prog);
   glDeleteProgram(bg_prog);
   glDeleteProgram(text_prog);
+  glDeleteProgram(ring_prog);
   free(assets_dir);
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);

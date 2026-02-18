@@ -91,6 +91,37 @@ static uint8_t *try_load_rgba(const char *dir, const char *filename, int *w, int
   return data;
 }
 
+static GLuint upload_rgba2d(const uint8_t *rgba, int w, int h) {
+  GLuint tex = 0;
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  return tex;
+}
+
+GLuint textures_try_load_rgba2d(const char *dir, const char *label, const char *const *candidates, int *out_w, int *out_h) {
+  if (!candidates) return 0;
+  for (size_t i = 0; candidates[i]; i++) {
+    int w = 0, h = 0;
+    uint8_t *data = try_load_rgba(dir, candidates[i], &w, &h);
+    if (!data) continue;
+    GLuint tex = upload_rgba2d(data, w, h);
+    stbi_image_free(data);
+    if (tex) {
+      fprintf(stderr, "Loaded %s texture from %s/%s (%dx%d)\n", label ? label : "image", dir ? dir : ".", candidates[i], w,
+              h);
+    }
+    if (out_w) *out_w = w;
+    if (out_h) *out_h = h;
+    return tex;
+  }
+  return 0;
+}
+
 static void upload_layer(GLuint tex, int layer, const uint8_t *rgba, int w, int h) {
   (void)tex;
   glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, w, h, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
