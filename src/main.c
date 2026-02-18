@@ -76,6 +76,53 @@ static double clampd(double x, double lo, double hi) {
   return x;
 }
 
+static uint32_t hash_u32(uint32_t x) {
+  // Cheap integer hash.
+  x ^= x >> 16;
+  x *= 0x7feb352du;
+  x ^= x >> 15;
+  x *= 0x846ca68bu;
+  x ^= x >> 16;
+  return x;
+}
+
+static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b) {
+  const float hh = h - floorf(h);
+  const float c = v * s;
+  const float x = c * (1.0f - fabsf(fmodf(hh * 6.0f, 2.0f) - 1.0f));
+  const float m = v - c;
+  float rr = 0.0f, gg = 0.0f, bb = 0.0f;
+  const float k = hh * 6.0f;
+  if (k < 1.0f) {
+    rr = c;
+    gg = x;
+  } else if (k < 2.0f) {
+    rr = x;
+    gg = c;
+  } else if (k < 3.0f) {
+    gg = c;
+    bb = x;
+  } else if (k < 4.0f) {
+    gg = x;
+    bb = c;
+  } else if (k < 5.0f) {
+    rr = x;
+    bb = c;
+  } else {
+    rr = c;
+    bb = x;
+  }
+  *r = rr + m;
+  *g = gg + m;
+  *b = bb + m;
+}
+
+static void trail_color_from_id(uint32_t id, float *r, float *g, float *b) {
+  const uint32_t h = hash_u32(id ? id : 1u);
+  const float hue = (float)(h & 0xFFFFu) / 65535.0f;
+  hsv_to_rgb(hue, 0.75f, 0.95f, r, g, b);
+}
+
 typedef struct {
   float x;
   float y;
@@ -741,8 +788,28 @@ typedef struct {
 } RingGPU;
 
 enum {
-  TRAIL_LEN = 2048,
+  TRAIL_LEN = 4096,
 };
+
+static size_t trail_len_scale_up(size_t n) {
+  if (n < 2)
+    n = 2;
+  double next = ceil((double)n * 1.5);
+  if (next < 2.0)
+    next = 2.0;
+  if (next > (double)TRAIL_LEN)
+    next = (double)TRAIL_LEN;
+  return (size_t)next;
+}
+
+static size_t trail_len_scale_down(size_t n) {
+  if (n < 2)
+    n = 2;
+  double next = floor((double)n / 1.5);
+  if (next < 2.0)
+    next = 2.0;
+  return (size_t)next;
+}
 
 typedef struct {
   uint32_t id;
@@ -936,6 +1003,7 @@ static void print_controls(void) {
                   "  C: clear all bodies\n"
                   "  M: toggle merge-on-collision\n"
                   "  T: toggle trails\n"
+                  "  PgUp/PgDn: trail length\n"
                   "  V: toggle velocity vectors\n"
                   "  [ / ]: decrease/increase spawn mass\n"
                   "  - / =: slow down / speed up time\n"
@@ -1312,6 +1380,7 @@ int main(int argc, char **argv) {
   bool show_vectors = true;
   double vector_scale = 0.02;
   double render_radius_scale = 2.5;
+  size_t trail_draw_len = TRAIL_LEN;
 
   Trail *trails = NULL;
   size_t trail_count = 0;
@@ -1463,6 +1532,14 @@ int main(int argc, char **argv) {
         case SDLK_t:
           show_trails = !show_trails;
           fprintf(stderr, "trails: %s\n", show_trails ? "on" : "off");
+          break;
+        case SDLK_PAGEUP:
+          trail_draw_len = trail_len_scale_up(trail_draw_len);
+          fprintf(stderr, "trail_draw_len: %zu\n", trail_draw_len);
+          break;
+        case SDLK_PAGEDOWN:
+          trail_draw_len = trail_len_scale_down(trail_draw_len);
+          fprintf(stderr, "trail_draw_len: %zu\n", trail_draw_len);
           break;
         case SDLK_v:
           show_vectors = !show_vectors;
@@ -1853,11 +1930,15 @@ int main(int argc, char **argv) {
         if (follow_t && t->id == selected_id)
           continue;
 
+        const size_t t_count = (size_t)fmin((double)t->count, (double)trail_draw_len);
         const size_t count =
-            follow_t ? (size_t)fmin((double)t->count, (double)follow_t->count)
-                     : t->count;
+            follow_t ? (size_t)fmin((double)t_count, (double)follow_t->count)
+                     : t_count;
         if (count < 2)
           continue;
+
+        float tr = 1.0f, tg = 1.0f, tb = 1.0f;
+        trail_color_from_id(b->id, &tr, &tg, &tb);
 
         const size_t start = (t->head + TRAIL_LEN - count) % TRAIL_LEN;
         const size_t fstart =
@@ -1894,16 +1975,16 @@ int main(int argc, char **argv) {
           line_cpu[line_count++] = (LineVertex){.x = x0,
                                                 .y = y0,
                                                 .z = z0,
-                                                .r = b->r,
-                                                .g = b->g,
-                                                .b = b->b,
+                                                .r = tr,
+                                                .g = tg,
+                                                .b = tb,
                                                 .a = a0};
           line_cpu[line_count++] = (LineVertex){.x = x1,
                                                 .y = y1,
                                                 .z = z1,
-                                                .r = b->r,
-                                                .g = b->g,
-                                                .b = b->b,
+                                                .r = tr,
+                                                .g = tg,
+                                                .b = tb,
                                                 .a = a1};
         }
       }
@@ -2610,6 +2691,7 @@ int main(int argc, char **argv) {
           "Wheel: zoom",
           "F: follow selected",
           "T: trails   V: velocity vectors",
+          "PgUp/PgDn: trail length",
           "Space: pause   .: step",
           "- / =: time scale",
           "G / H: gravity",
