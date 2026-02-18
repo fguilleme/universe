@@ -51,6 +51,13 @@ static bool camera_changed(const Camera *a, const Camera *b) {
   return false;
 }
 
+static double body_visual_radius_world(const Body *b, bool realistic_scale,
+                                      double exaggerated_scale) {
+  const double base = realistic_scale ? b->radius : b->render_radius;
+  const double scale = realistic_scale ? 1.0 : exaggerated_scale;
+  return base * scale;
+}
+
 typedef struct {
   float x;
   float y;
@@ -903,6 +910,7 @@ static void print_controls(void) {
   fprintf(stderr, "Controls:\n"
                   "  F1: toggle help\n"
                   "  F2: toggle body labels\n"
+                  "  F3: toggle realistic scaling\n"
                   "  RMB drag: spawn body with velocity\n"
                   "    (hold Ctrl for circular orbit; Alt reverses)\n"
                   "  LMB click: select nearest body\n"
@@ -1271,6 +1279,7 @@ int main(int argc, char **argv) {
   bool paused = false;
   bool show_help = false;
   bool show_labels = false;
+  bool realistic_scale = false;
 
   bool panning = false;
   int pan_start_x = 0, pan_start_y = 0;
@@ -1354,6 +1363,10 @@ int main(int argc, char **argv) {
           break;
         case SDLK_F2:
           show_labels = !show_labels;
+          break;
+        case SDLK_F3:
+          realistic_scale = !realistic_scale;
+          fprintf(stderr, "realistic_scale: %s\n", realistic_scale ? "on" : "off");
           break;
         case SDLK_ESCAPE:
           running = false;
@@ -1597,7 +1610,8 @@ int main(int argc, char **argv) {
                   (double)dx * (double)dx + (double)dy * (double)dy;
               // Cap pick radius so the Sun doesn't "eat" all clicks.
               const double radius_px_raw =
-                  (b->render_radius * render_radius_scale) *
+                  body_visual_radius_world(b, realistic_scale,
+                                           render_radius_scale) *
                   ((double)dh / cam.zoom_world_h);
               const double pick_r_px = clampd(radius_px_raw * 1.4, 10.0, 60.0);
               if (d2 > pick_r_px * pick_r_px)
@@ -1900,7 +1914,8 @@ int main(int argc, char **argv) {
         view_to_world_dir(&cam, 0.0f, 1.0f, 0.0f, &up_x, &up_y, &up_z);
 
         const int segs = 128;
-        const double body_r_world = sel->render_radius * render_radius_scale;
+        const double body_r_world =
+            body_visual_radius_world(sel, realistic_scale, render_radius_scale);
         const double body_r_px_raw = body_r_world * (double)pixels_per_world;
         const double body_r_px = body_r_px_raw;
         // Keep the ring just a few pixels larger than the sprite.
@@ -2020,7 +2035,8 @@ int main(int argc, char **argv) {
       particle_cpu[i].x = (float)b->x;
       particle_cpu[i].y = (float)b->y;
       particle_cpu[i].z = (float)b->z;
-      particle_cpu[i].radius = (float)(b->render_radius * render_radius_scale);
+      particle_cpu[i].radius = (float)body_visual_radius_world(
+          b, realistic_scale, render_radius_scale);
       particle_cpu[i].r = b->r;
       particle_cpu[i].g = b->g;
       particle_cpu[i].b = b->b;
@@ -2067,7 +2083,8 @@ int main(int argc, char **argv) {
         ring_cpu_cap = next;
       }
 
-      const double pr = b->render_radius * render_radius_scale;
+      const double pr =
+          body_visual_radius_world(b, realistic_scale, render_radius_scale);
       const double outer = pr * 2.5;
       const double inner = pr * 1.2;
 
@@ -2269,8 +2286,10 @@ int main(int argc, char **argv) {
           if (world_to_screen_px(&world_to_clip, dw, dh, (float)sel->x,
                                  (float)sel->y, (float)sel->z, &sx, &sy)) {
             const float scale = 1.5f;
-            float radius_px = (float)(sel->render_radius * render_radius_scale *
-                                      (double)dh / cam.zoom_world_h);
+            float radius_px =
+                (float)(body_visual_radius_world(sel, realistic_scale,
+                                                 render_radius_scale) *
+                        (double)dh / cam.zoom_world_h);
             // Prevent the label from flying away when zoomed in.
             radius_px = (float)clampd(radius_px, 6.0, 70.0);
             const float text_w = (float)strlen(sel->name) * 8.0f * scale;
@@ -2325,8 +2344,10 @@ int main(int argc, char **argv) {
           continue;
 
         const float scale = 1.0f;
-        float radius_px = (float)(b->render_radius * render_radius_scale *
-                                  (double)dh / cam.zoom_world_h);
+        float radius_px =
+            (float)(body_visual_radius_world(b, realistic_scale,
+                                             render_radius_scale) *
+                    (double)dh / cam.zoom_world_h);
         radius_px = (float)clampd(radius_px, 6.0, 60.0);
         const float text_w = (float)strlen(b->name) * 8.0f * scale;
         const float x = (float)clampd((double)(sx - text_w * 0.5f), 4.0,
@@ -2372,6 +2393,7 @@ int main(int argc, char **argv) {
       const char *lines[] = {
           "F1: toggle help",
           "F2: toggle body labels",
+          "F3: realistic scaling",
           "",
           "RMB drag: spawn body (Shift faster)",
           "  Ctrl: circular orbit around selection",
@@ -2513,6 +2535,43 @@ int main(int argc, char **argv) {
         glBindVertexArray(0);
       }
 
+      glDepthMask(GL_TRUE);
+      glEnable(GL_DEPTH_TEST);
+    }
+
+    // Scaling mode overlay.
+    {
+      glDisable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+      const char *mode = realistic_scale ? "Scale: realistic (F3)" : "Scale: exaggerated (F3)";
+      const float scale = 2.0f;
+      const float text_w = (float)strlen(mode) * 8.0f * scale;
+      const float x = (float)clampd(((double)dw - (double)text_w) * 0.5, 4.0, (double)dw - 4.0 - text_w);
+      const float y = (float)dh - (8.0f * scale) - 6.0f;
+
+      size_t tv_count = 0;
+      text_append(&text_cpu, &tv_count, &text_cpu_cap, x, y, scale, mode);
+      if (tv_count) {
+        glBindVertexArray(text_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, text_vbo);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tv_count * sizeof(TextVertex)), text_cpu, GL_STREAM_DRAW);
+
+        glUseProgram(text_prog);
+        glUniform2f(tuViewport, (float)dw, (float)dh);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, font_tex);
+
+        glUniform2f(tuOffsetPx, 1.5f, 1.5f);
+        glUniform4f(tuColor, 0.0f, 0.0f, 0.0f, 0.55f);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)tv_count);
+
+        glUniform2f(tuOffsetPx, 0.0f, 0.0f);
+        glUniform4f(tuColor, 1.0f, 1.0f, 1.0f, 0.80f);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)tv_count);
+
+        glUseProgram(0);
+        glBindVertexArray(0);
+      }
       glDepthMask(GL_TRUE);
       glEnable(GL_DEPTH_TEST);
     }
