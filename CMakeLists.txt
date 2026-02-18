@@ -5,6 +5,9 @@ project(universe_sandbox_clone C OBJC)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Emit compile_commands.json for IDE tooling.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 find_package(OpenGL REQUIRED)
 
 # SDL2
@@ -25,6 +28,19 @@ endif()
 
 add_executable(universe
   src/main.c
+  src/util.c
+  src/ui_text.c
+  src/ui_overlay.c
+  src/ui_labels.c
+  src/input_mouse.c
+  src/mat4.c
+  src/camera.c
+  src/scene_fbo.c
+  src/render_bg.c
+  src/render_lines.c
+  src/render_particles.c
+  src/render_rings.c
+  src/presets.c
   src/sim.c
   src/glutil.c
   src/textures.c
