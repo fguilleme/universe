@@ -516,18 +516,12 @@ int main(int argc, char **argv) {
   // Apply initial preset from YAML.
   if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                               &selected_id, &follow_selected)) {
-    preset_seed_solar_system(&sim);
-    preset = PRESET_SOLAR;
-    cam = (Camera){.cx = 0.0,
-                   .cy = 0.0,
-                   .cz = 0.0,
-                   .yaw = 0.0,
-                   .pitch = -1.24,
-                   .zoom_world_h = 4.0};
-    time_scale = 0.03;
-    selected_id = sim.count ? sim.bodies[0].id : 0;
-    follow_selected = false;
+    fprintf(stderr,
+            "Failed to load preset 'solar_system' from presets YAML. "
+            "(Set UNIVERSE_PRESETS_YAML=...)\n");
+    return 1;
   }
+  preset = PRESET_SOLAR;
 
   Camera last_cam_printed = cam;
   bool last_cam_printed_init = false;
@@ -574,68 +568,46 @@ int main(int argc, char **argv) {
         case SDLK_r:
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
-            preset_seed_solar_system(&sim);
-            cam.cx = 0.0;
-            cam.cy = 0.0;
-            cam.cz = 0.0;
-            cam.yaw = 0.0;
-            cam.pitch = -1.24, cam.zoom_world_h = 4.0;
-            time_scale = 0.03;
-            selected_id = sim.count ? sim.bodies[0].id : 0;
-            follow_selected = false;
+            fprintf(stderr,
+                    "Failed to load preset 'solar_system' from presets YAML\n");
+            break;
           }
           preset = PRESET_SOLAR;
           sim_time = 0.0;
+          accumulator = 0.0;
           break;
         case SDLK_1:
           if (!preset_apply_from_yaml("two_body", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
-            preset_seed_two_body_orbit(&sim);
-            cam.cx = 0.0;
-            cam.cy = 0.0;
-            cam.cz = 0.0;
-            cam.yaw = 0.0;
-            cam.pitch = 0.0;
-            cam.zoom_world_h = 40.0;
-            time_scale = 1.0;
-            selected_id = 0;
-            follow_selected = false;
+            fprintf(stderr,
+                    "Failed to load preset 'two_body' from presets YAML\n");
+            break;
           }
           preset = PRESET_TWO_BODY;
           sim_time = 0.0;
+          accumulator = 0.0;
           break;
         case SDLK_2:
           if (!preset_apply_from_yaml("disk_galaxy", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
-            preset_seed_disk_galaxy(&sim, 1500, 140.0, 2.0e6);
-            cam.cx = 0.0;
-            cam.cy = 0.0;
-            cam.cz = 0.0;
-            cam.yaw = 0.0;
-            cam.pitch = 0.0;
-            cam.zoom_world_h = 320.0;
-            time_scale = 1.0;
-            selected_id = 0;
-            follow_selected = false;
+            fprintf(stderr,
+                    "Failed to load preset 'disk_galaxy' from presets YAML\n");
+            break;
           }
           preset = PRESET_GALAXY;
           sim_time = 0.0;
+          accumulator = 0.0;
           break;
         case SDLK_3:
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
-            preset_seed_solar_system(&sim);
-            cam.cx = 0.0;
-            cam.cy = 0.0;
-            cam.cz = 0.0;
-            cam.yaw = 0.0;
-            cam.pitch = -1.24, cam.zoom_world_h = 4.0;
-            time_scale = 0.03;
-            selected_id = sim.count ? sim.bodies[0].id : 0;
-            follow_selected = false;
+            fprintf(stderr,
+                    "Failed to load preset 'solar_system' from presets YAML\n");
+            break;
           }
           preset = PRESET_SOLAR;
           sim_time = 0.0;
+          accumulator = 0.0;
           break;
         case SDLK_c:
           sim_reset(&sim);

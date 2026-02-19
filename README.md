@@ -79,6 +79,13 @@ Performance tips:
 Preset definitions live in `data/presets.yaml`.
 
 - Override path: `UNIVERSE_PRESETS_YAML=/path/to/presets.yaml ./build/universe`
+- A valid presets YAML is required; there is no built-in fallback.
+
+Default search order when `UNIVERSE_PRESETS_YAML` is not set:
+
+- `data/presets.yaml`
+- `../data/presets.yaml`
+- relative to the executable via `SDL_GetBasePath()` (e.g. `../data/presets.yaml`)
 - Each entry under `presets:` can be either:
   - `kind: bodies` with a `bodies:` list (like the solar system)
   - `kind: two_body` / `kind: disk_galaxy` with generator parameters

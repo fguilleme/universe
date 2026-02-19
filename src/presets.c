@@ -8,6 +8,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <SDL2/SDL.h>
+
 #include "textures.h"
 
 static uint32_t xorshift32(uint32_t *state) {
@@ -282,32 +284,53 @@ static bool preset_yaml_push_body(PresetYaml *py, const BodyInit *b) {
   return true;
 }
 
-static const char *resolve_presets_yaml_path(void) {
+static char *resolve_presets_yaml_path(void) {
   const char *env = getenv("UNIVERSE_PRESETS_YAML");
   if (env && env[0] && file_exists(env))
-    return env;
+    return strdup(env);
   if (file_exists("data/presets.yaml"))
-    return "data/presets.yaml";
+    return strdup("data/presets.yaml");
   if (file_exists("../data/presets.yaml"))
-    return "../data/presets.yaml";
+    return strdup("../data/presets.yaml");
+
+  // Try relative to the executable (works when launched outside repo root).
+  char *base = SDL_GetBasePath();
+  if (base) {
+    char tmp[1024];
+    // Common when executable is in build/.
+    snprintf(tmp, sizeof(tmp), "%s../data/presets.yaml", base);
+    if (file_exists(tmp)) {
+      SDL_free(base);
+      return strdup(tmp);
+    }
+    // Common when executable is next to data/.
+    snprintf(tmp, sizeof(tmp), "%sdata/presets.yaml", base);
+    if (file_exists(tmp)) {
+      SDL_free(base);
+      return strdup(tmp);
+    }
+    SDL_free(base);
+  }
   return NULL;
 }
 
 static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
-                            const char **out_used_path) {
+                            char **out_used_path) {
   if (!preset_name || !out)
     return false;
   *out = (PresetYaml){0};
   if (out_used_path)
     *out_used_path = NULL;
 
-  const char *path = resolve_presets_yaml_path();
+  char *path = resolve_presets_yaml_path();
   if (!path)
     return false;
 
   FILE *f = fopen(path, "rb");
-  if (!f)
+  if (!f) {
+    free(path);
     return false;
+  }
 
   bool in_presets = false;
   bool in_target = false;
@@ -356,7 +379,7 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
           if (match) {
             out->found = true;
             if (out_used_path)
-              *out_used_path = path;
+              *out_used_path = strdup(path);
           }
         }
         continue;
@@ -401,7 +424,7 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
     }
 
     const bool can_parse_kv =
-        (!in_bodies && indent == 4) || (in_bodies && indent >= 8);
+        (!in_bodies && indent == 4) || (in_bodies && indent >= 6);
     if (!can_parse_kv)
       continue;
 
@@ -514,6 +537,7 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
   }
 
   fclose(f);
+  free(path);
   return out->found;
 }
 
@@ -547,7 +571,7 @@ bool preset_apply_from_yaml(const char *preset_name, Sim *sim, Camera *cam,
     return false;
 
   PresetYaml py;
-  const char *used_path = NULL;
+  char *used_path = NULL;
   if (!load_preset_yaml(preset_name, &py, &used_path))
     return false;
 
@@ -680,6 +704,7 @@ bool preset_apply_from_yaml(const char *preset_name, Sim *sim, Camera *cam,
   fprintf(stderr, "Loaded preset %s from %s\n", preset_name,
           used_path ? used_path : "(unknown)");
   preset_yaml_destroy(&py);
+  free(used_path);
   return true;
 }
 
@@ -721,240 +746,32 @@ static void add_body_init_list(Sim *sim, const BodyInit *bodies, size_t count) {
 }
 
 void preset_seed_two_body_orbit(Sim *sim) {
-  if (preset_apply_from_yaml("two_body", sim, NULL, NULL, NULL, NULL))
-    return;
-
-  // Fallback if YAML is missing.
-  sim_reset(sim);
-  sim->G = 1.0;
-  sim->softening = 0.02;
-  sim->density = 2.0;
-  sim->merge_on_collision = true;
-
-  double sun_mass = 1.0e6;
-  double planet_mass = 10.0;
-  double r = 30.0;
-
-  PresetYaml py;
-  const char *used_path = NULL;
-  if (load_preset_yaml("two_body", &py, &used_path)) {
-    if (py.has_sim_G)
-      sim->G = py.sim_G;
-    if (py.has_sim_softening)
-      sim->softening = py.sim_softening;
-    if (py.has_sim_density)
-      sim->density = py.sim_density;
-    if (py.has_sim_merge_on_collision)
-      sim->merge_on_collision = py.sim_merge_on_collision;
-
-    if (py.kind == PRESET_YAML_KIND_BODIES && py.body_count) {
-      fprintf(stderr, "Loaded preset two_body (bodies) from %s\n", used_path);
-      add_body_init_list(sim, py.bodies, py.body_count);
-      preset_yaml_destroy(&py);
-      return;
-    }
-
-    if (py.has_primary_mass)
-      sun_mass = py.primary_mass;
-    if (py.has_secondary_mass)
-      planet_mass = py.secondary_mass;
-    if (py.has_orbit_radius)
-      r = py.orbit_radius;
-    fprintf(stderr, "Loaded preset two_body from %s\n", used_path);
-    preset_yaml_destroy(&py);
+  if (!preset_apply_from_yaml("two_body", sim, NULL, NULL, NULL, NULL)) {
+    fprintf(stderr,
+            "ERROR: missing/invalid preset 'two_body' in presets YAML "
+            "(UNIVERSE_PRESETS_YAML=...)\n");
+    sim_reset(sim);
   }
-
-  const double r_safe = fmax(r, 1e-9);
-  const double v = sqrt(sim->G * sun_mass / r_safe);
-
-  (void)sim_add_body(sim, (Body){.name = "Primary",
-                                 .x = 0.0,
-                                 .y = 0.0,
-                                 .vx = 0.0,
-                                 .vy = 0.0,
-                                 .mass = sun_mass,
-                                 .radius = 1.0,
-                                 .render_radius = 1.0,
-                                 .r = 1.0f,
-                                 .g = 0.9f,
-                                 .b = 0.6f});
-  (void)sim_add_body(sim, (Body){.name = "Secondary",
-                                 .x = r,
-                                 .y = 0.0,
-                                 .vx = 0.0,
-                                 .vy = v,
-                                 .mass = planet_mass,
-                                 .radius = 0.5,
-                                 .render_radius = 0.5,
-                                 .r = 0.5f,
-                                 .g = 0.8f,
-                                 .b = 1.0f});
 }
 
 void preset_seed_disk_galaxy(Sim *sim, int n, double disk_radius,
                              double central_mass) {
-  if (preset_apply_from_yaml("disk_galaxy", sim, NULL, NULL, NULL, NULL))
-    return;
-
-  // Fallback if YAML is missing.
-  sim_reset(sim);
-  sim->G = 1.0;
-  sim->softening = 0.05;
-  sim->density = 1.5;
-  sim->merge_on_collision = true;
-
-  int use_n = n;
-  double use_disk_radius = disk_radius;
-  double use_central_mass = central_mass;
-  uint32_t seed = 0x12345678u;
-  double noise_scale = 0.08;
-
-  PresetYaml py;
-  const char *used_path = NULL;
-  if (load_preset_yaml("disk_galaxy", &py, &used_path)) {
-    if (py.has_sim_G)
-      sim->G = py.sim_G;
-    if (py.has_sim_softening)
-      sim->softening = py.sim_softening;
-    if (py.has_sim_density)
-      sim->density = py.sim_density;
-    if (py.has_sim_merge_on_collision)
-      sim->merge_on_collision = py.sim_merge_on_collision;
-
-    if (py.kind == PRESET_YAML_KIND_BODIES && py.body_count) {
-      fprintf(stderr, "Loaded preset disk_galaxy (bodies) from %s\n",
-              used_path);
-      add_body_init_list(sim, py.bodies, py.body_count);
-      preset_yaml_destroy(&py);
-      return;
-    }
-
-    if (py.has_n)
-      use_n = py.n;
-    if (py.has_disk_radius)
-      use_disk_radius = py.disk_radius;
-    if (py.has_central_mass)
-      use_central_mass = py.central_mass;
-    if (py.has_seed)
-      seed = py.seed;
-    if (py.has_noise)
-      noise_scale = py.noise;
-    fprintf(stderr, "Loaded preset disk_galaxy from %s\n", used_path);
-    preset_yaml_destroy(&py);
-  }
-
-  (void)sim_add_body(sim, (Body){.name = "Center",
-                                 .x = 0.0,
-                                 .y = 0.0,
-                                 .vx = 0.0,
-                                 .vy = 0.0,
-                                 .mass = use_central_mass,
-                                 .radius = 0.5,
-                                 .render_radius = 1.0,
-                                 .r = 1.0f,
-                                 .g = 0.85f,
-                                 .b = 0.5f});
-
-  uint32_t rng = seed;
-  for (int i = 0; i < use_n; i++) {
-    const double u = frand01(&rng);
-    const double v = frand01(&rng);
-    const double r = use_disk_radius * sqrt(u);
-    const double a = v * 2.0 * M_PI;
-    const double x = r * cos(a);
-    const double y = r * sin(a);
-
-    // Circular-ish orbit around center with slight noise.
-    const double speed = sqrt(sim->G * use_central_mass / fmax(r, 1e-3));
-    const double tx = -sin(a);
-    const double ty = cos(a);
-    const double noise = (frand01(&rng) - 0.5) * noise_scale;
-
-    Body b = {0};
-    b.x = x;
-    b.y = y;
-    b.vx = tx * speed * (1.0 + noise);
-    b.vy = ty * speed * (1.0 + noise);
-    b.mass = 1.0 + 15.0 * frand01(&rng);
-    b.r = (float)(0.4 + 0.6 * frand01(&rng));
-    b.g = (float)(0.4 + 0.6 * frand01(&rng));
-    b.b = 1.0f;
-    (void)sim_add_body(sim, b);
+  (void)n;
+  (void)disk_radius;
+  (void)central_mass;
+  if (!preset_apply_from_yaml("disk_galaxy", sim, NULL, NULL, NULL, NULL)) {
+    fprintf(stderr,
+            "ERROR: missing/invalid preset 'disk_galaxy' in presets YAML "
+            "(UNIVERSE_PRESETS_YAML=...)\n");
+    sim_reset(sim);
   }
 }
 
 void preset_seed_solar_system(Sim *sim) {
-  if (preset_apply_from_yaml("solar_system", sim, NULL, NULL, NULL, NULL))
-    return;
-
-  // Fallback if YAML is missing.
-  // Accurate-ish 3D initial conditions from JPL Horizons (DE441),
-  // barycentric ecliptic-of-J2000 frame at 2000-01-01 00:00 TDB.
-  // Units in this simulation:
-  // - distance: AU
-  // - mass: solar mass
-  // - time: years
-  // In these units, G = 4*pi^2.
-  sim_reset(sim);
-  sim->G = 4.0 * M_PI * M_PI;
-  sim->softening = 1e-6;
-  sim->density = 1.0;
-  sim->merge_on_collision = false;
-
-  PresetYaml py;
-  const char *used_path = NULL;
-  if (load_preset_yaml("solar_system", &py, &used_path)) {
-    if (py.has_sim_G)
-      sim->G = py.sim_G;
-    if (py.has_sim_softening)
-      sim->softening = py.sim_softening;
-    if (py.has_sim_density)
-      sim->density = py.sim_density;
-    if (py.has_sim_merge_on_collision)
-      sim->merge_on_collision = py.sim_merge_on_collision;
-
-    if (py.kind == PRESET_YAML_KIND_BODIES && py.body_count) {
-      fprintf(stderr, "Loaded preset solar_system from %s (%zu bodies)\n",
-              used_path, py.body_count);
-      add_body_init_list(sim, py.bodies, py.body_count);
-      preset_yaml_destroy(&py);
-      return;
-    }
-    preset_yaml_destroy(&py);
+  if (!preset_apply_from_yaml("solar_system", sim, NULL, NULL, NULL, NULL)) {
+    fprintf(stderr,
+            "ERROR: missing/invalid preset 'solar_system' in presets YAML "
+            "(UNIVERSE_PRESETS_YAML=...)\n");
+    sim_reset(sim);
   }
-
-  fprintf(stderr,
-          "Presets YAML not found/invalid; using built-in solar_system preset. "
-          "(Set UNIVERSE_PRESETS_YAML=...)\n");
-
-  const BodyInit built_in[] = {
-      {"Sun", 1.0, 695700.0, TEX_SUN, 7.25, 25.38, -1.068108951496322E+06,
-       -4.177210908491462E+05, 3.086887010002915E+04, 9.305302656256911E-03,
-       -1.283177282717393E-02, -1.631700118015769E-04},
-      {"Mercury", 1.660e-7, 2439.7, TEX_MERCURY, 0.034, 58.646,
-       -2.212073002393702E+07, -6.682435921338345E+07, -3.461577076477692E+06,
-       3.666229234452722E+01, -1.230266984222893E+01, -4.368336206255391E+00},
-      {"Venus", 2.447e-6, 6051.8, TEX_VENUS, 177.36, -243.025,
-       -1.075068040813442E+08, -1.053381041265540E+07, 6.024630234834461E+06,
-       2.949586892816910E+00, -3.520915385418408E+01, -5.945882137071832E-01},
-      {"Earth", 3.003e-6, 6371.0, TEX_EARTH, 23.439, 0.99726968,
-       -2.521092392536846E+07, 1.449177150228508E+08, -2.394650324223201E+04,
-       -2.983862964912880E+01, -5.218619426624726E+00, 1.193210383927141E-03},
-      {"Mars", 3.227e-7, 3389.5, TEX_MARS, 25.19, 1.02595675,
-       -2.155838897834890E+08, -3.539753056080124E+07, 4.532312700768938E+06,
-       3.886195690590875E+00, -2.315847231020980E+01, -5.777378581341476E-01},
-      {"Jupiter", 9.545e-4, 69911.0, TEX_JUPITER, 3.13, 0.41354,
-       5.990175449652451E+08, 4.394132557364160E+08, -1.520962039552424E+07,
-       -7.882322868602207E+00, 1.134831390779115E+01, 1.246425392362529E-01},
-      {"Saturn", 2.858e-4, 58232.0, TEX_SATURN, 26.73, 0.44401,
-       9.587267807903839E+08, -9.825068848392826E+08, -1.695064654623866E+07,
-       5.908189281781105E+00, 6.296823371892003E+00, -3.704231008630100E-01},
-      {"Uranus", 4.366e-5, 25362.0, TEX_URANUS, 97.77, -0.71833,
-       2.158708519561221E+09, 2.058822953381595E+09, -1.785026690391928E+07,
-       -4.813504855508626E+00, 4.665693498302723E+00, 8.548558001407977E-02},
-      {"Neptune", 5.151e-5, 24622.0, TEX_NEPTUNE, 28.32, 0.67125,
-       2.510985726269384E+09, -3.732999840511448E+09, 1.873087787685826E+07,
-       4.445846366126391E+00, 3.067772238252208E+00, -1.638828425643102E-01},
-  };
-  add_body_init_list(sim, built_in, sizeof(built_in) / sizeof(built_in[0]));
 }
