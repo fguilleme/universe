@@ -187,8 +187,8 @@ static bool parse_bool(const char *s, bool *out) {
     *out = true;
     return true;
   }
-  if (strcmp(s, "false") == 0 || strcmp(s, "False") == 0 || strcmp(s, "0") == 0 ||
-      strcmp(s, "no") == 0 || strcmp(s, "off") == 0) {
+  if (strcmp(s, "false") == 0 || strcmp(s, "False") == 0 ||
+      strcmp(s, "0") == 0 || strcmp(s, "no") == 0 || strcmp(s, "off") == 0) {
     *out = false;
     return true;
   }
@@ -263,7 +263,7 @@ static const char *resolve_presets_yaml_path(void) {
 }
 
 static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
-                            const char **out_used_path) {
+                             const char **out_used_path) {
   if (!preset_name || !out)
     return false;
   *out = (PresetYaml){0};
@@ -369,7 +369,8 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
       // fallthrough to key/value parsing
     }
 
-    const bool can_parse_kv = (!in_bodies && indent == 4) || (in_bodies && indent >= 8);
+    const bool can_parse_kv =
+        (!in_bodies && indent == 4) || (in_bodies && indent >= 8);
     if (!can_parse_kv)
       continue;
 
@@ -545,6 +546,8 @@ void preset_seed_two_body_orbit(Sim *sim) {
                                  .vx = 0.0,
                                  .vy = 0.0,
                                  .mass = sun_mass,
+                                 .radius = 1.0,
+                                 .render_radius = 1.0,
                                  .r = 1.0f,
                                  .g = 0.9f,
                                  .b = 0.6f});
@@ -554,6 +557,8 @@ void preset_seed_two_body_orbit(Sim *sim) {
                                  .vx = 0.0,
                                  .vy = v,
                                  .mass = planet_mass,
+                                 .radius = 0.5,
+                                 .render_radius = 0.5,
                                  .r = 0.5f,
                                  .g = 0.8f,
                                  .b = 1.0f});
@@ -586,7 +591,8 @@ void preset_seed_disk_galaxy(Sim *sim, int n, double disk_radius,
       sim->merge_on_collision = py.sim_merge_on_collision;
 
     if (py.kind == PRESET_YAML_KIND_BODIES && py.body_count) {
-      fprintf(stderr, "Loaded preset disk_galaxy (bodies) from %s\n", used_path);
+      fprintf(stderr, "Loaded preset disk_galaxy (bodies) from %s\n",
+              used_path);
       add_body_init_list(sim, py.bodies, py.body_count);
       preset_yaml_destroy(&py);
       return;
@@ -612,6 +618,8 @@ void preset_seed_disk_galaxy(Sim *sim, int n, double disk_radius,
                                  .vx = 0.0,
                                  .vy = 0.0,
                                  .mass = use_central_mass,
+                                 .radius = 0.5,
+                                 .render_radius = 1.0,
                                  .r = 1.0f,
                                  .g = 0.85f,
                                  .b = 0.5f});
@@ -692,34 +700,26 @@ void preset_seed_solar_system(Sim *sim) {
        -2.212073002393702E+07, -6.682435921338345E+07, -3.461577076477692E+06,
        3.666229234452722E+01, -1.230266984222893E+01, -4.368336206255391E+00},
       {"Venus", 2.447e-6, 6051.8, TEX_VENUS, 177.36, -243.025,
-       -1.075068040813442E+08, -1.053381041265540E+07,
-       6.024630234834461E+06, 2.949586892816910E+00,
-       -3.520915385418408E+01, -5.945882137071832E-01},
+       -1.075068040813442E+08, -1.053381041265540E+07, 6.024630234834461E+06,
+       2.949586892816910E+00, -3.520915385418408E+01, -5.945882137071832E-01},
       {"Earth", 3.003e-6, 6371.0, TEX_EARTH, 23.439, 0.99726968,
-       -2.521092392536846E+07, 1.449177150228508E+08,
-       -2.394650324223201E+04, -2.983862964912880E+01,
-       -5.218619426624726E+00, 1.193210383927141E-03},
+       -2.521092392536846E+07, 1.449177150228508E+08, -2.394650324223201E+04,
+       -2.983862964912880E+01, -5.218619426624726E+00, 1.193210383927141E-03},
       {"Mars", 3.227e-7, 3389.5, TEX_MARS, 25.19, 1.02595675,
-       -2.155838897834890E+08, -3.539753056080124E+07,
-       4.532312700768938E+06, 3.886195690590875E+00,
-       -2.315847231020980E+01, -5.777378581341476E-01},
+       -2.155838897834890E+08, -3.539753056080124E+07, 4.532312700768938E+06,
+       3.886195690590875E+00, -2.315847231020980E+01, -5.777378581341476E-01},
       {"Jupiter", 9.545e-4, 69911.0, TEX_JUPITER, 3.13, 0.41354,
-       5.990175449652451E+08, 4.394132557364160E+08,
-       -1.520962039552424E+07, -7.882322868602207E+00,
-       1.134831390779115E+01, 1.246425392362529E-01},
+       5.990175449652451E+08, 4.394132557364160E+08, -1.520962039552424E+07,
+       -7.882322868602207E+00, 1.134831390779115E+01, 1.246425392362529E-01},
       {"Saturn", 2.858e-4, 58232.0, TEX_SATURN, 26.73, 0.44401,
-       9.587267807903839E+08, -9.825068848392826E+08,
-       -1.695064654623866E+07, 5.908189281781105E+00,
-       6.296823371892003E+00, -3.704231008630100E-01},
+       9.587267807903839E+08, -9.825068848392826E+08, -1.695064654623866E+07,
+       5.908189281781105E+00, 6.296823371892003E+00, -3.704231008630100E-01},
       {"Uranus", 4.366e-5, 25362.0, TEX_URANUS, 97.77, -0.71833,
-       2.158708519561221E+09, 2.058822953381595E+09,
-       -1.785026690391928E+07, -4.813504855508626E+00,
-       4.665693498302723E+00, 8.548558001407977E-02},
+       2.158708519561221E+09, 2.058822953381595E+09, -1.785026690391928E+07,
+       -4.813504855508626E+00, 4.665693498302723E+00, 8.548558001407977E-02},
       {"Neptune", 5.151e-5, 24622.0, TEX_NEPTUNE, 28.32, 0.67125,
-       2.510985726269384E+09, -3.732999840511448E+09,
-       1.873087787685826E+07, 4.445846366126391E+00,
-       3.067772238252208E+00, -1.638828425643102E-01},
+       2.510985726269384E+09, -3.732999840511448E+09, 1.873087787685826E+07,
+       4.445846366126391E+00, 3.067772238252208E+00, -1.638828425643102E-01},
   };
-  add_body_init_list(sim, built_in,
-                     sizeof(built_in) / sizeof(built_in[0]));
+  add_body_init_list(sim, built_in, sizeof(built_in) / sizeof(built_in[0]));
 }
