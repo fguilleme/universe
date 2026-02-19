@@ -83,6 +83,13 @@ Preset definitions live in `data/presets.yaml`.
   - `kind: bodies` with a `bodies:` list (like the solar system)
   - `kind: two_body` / `kind: disk_galaxy` with generator parameters
 
+The YAML can also specify view defaults per preset:
+
+- `time_scale`
+- `cam_cx`, `cam_cy`, `cam_cz`
+- `cam_yaw`, `cam_pitch`, `cam_zoom_world_h`
+- `selected_name` and `follow_selected`
+
 ## Controls
 
 - `F1`: toggle on-screen help

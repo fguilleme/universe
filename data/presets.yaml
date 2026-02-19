@@ -5,7 +5,17 @@ presets:
     kind: bodies
     sim_G: 39.47841760435743 # 4*pi^2
     sim_softening: 1.0e-6
+    sim_density: 1.0
     sim_merge_on_collision: false
+    time_scale: 0.03
+    cam_cx: 0.0
+    cam_cy: 0.0
+    cam_cz: 0.0
+    cam_yaw: 0.0
+    cam_pitch: -1.24
+    cam_zoom_world_h: 4.0
+    selected_name: Sun
+    follow_selected: false
     bodies:
       - name: Sun
         mass_solar: 1.0
@@ -130,9 +140,19 @@ presets:
     sim_softening: 0.02
     sim_density: 2.0
     sim_merge_on_collision: true
+    time_scale: 1.0
+    cam_cx: 0.0
+    cam_cy: 0.0
+    cam_cz: 0.0
+    cam_yaw: 0.0
+    cam_pitch: 0.0
+    cam_zoom_world_h: 40.0
+    follow_selected: false
     primary_mass: 1.0e6
     secondary_mass: 10.0
     orbit_radius: 30.0
+    primary_radius: 1.0
+    secondary_radius: 0.5
 
   disk_galaxy:
     kind: disk_galaxy
@@ -140,9 +160,17 @@ presets:
     sim_softening: 0.05
     sim_density: 1.5
     sim_merge_on_collision: true
+    time_scale: 1.0
+    cam_cx: 0.0
+    cam_cy: 0.0
+    cam_cz: 0.0
+    cam_yaw: 0.0
+    cam_pitch: 0.0
+    cam_zoom_world_h: 320.0
+    follow_selected: false
     n: 1500
     disk_radius: 140.0
     central_mass: 2.0e6
+    center_radius: 1.0
     seed: 0x12345678
     noise: 0.08
-

@@ -116,11 +116,42 @@ typedef struct {
   bool has_noise;
   double noise;
 
+  bool has_primary_radius;
+  double primary_radius;
+  bool has_secondary_radius;
+  double secondary_radius;
+  bool has_center_radius;
+  double center_radius;
+
+  bool has_time_scale;
+  double time_scale;
+
+  bool has_cam_cx;
+  double cam_cx;
+  bool has_cam_cy;
+  double cam_cy;
+  bool has_cam_cz;
+  double cam_cz;
+  bool has_cam_yaw;
+  double cam_yaw;
+  bool has_cam_pitch;
+  double cam_pitch;
+  bool has_cam_zoom_world_h;
+  double cam_zoom_world_h;
+
+  bool has_selected_name;
+  char selected_name[32];
+
+  bool has_follow_selected;
+  bool follow_selected;
+
   // Bodies list.
   BodyInit *bodies;
   size_t body_count;
   size_t body_cap;
 } PresetYaml;
+
+static void add_body_init_list(Sim *sim, const BodyInit *bodies, size_t count);
 
 static void preset_yaml_destroy(PresetYaml *p) {
   if (!p)
@@ -263,7 +294,7 @@ static const char *resolve_presets_yaml_path(void) {
 }
 
 static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
-                             const char **out_used_path) {
+                            const char **out_used_path) {
   if (!preset_name || !out)
     return false;
   *out = (PresetYaml){0};
@@ -411,6 +442,12 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
         out->has_secondary_mass = parse_double(val, &out->secondary_mass);
       } else if (strcmp(key, "orbit_radius") == 0) {
         out->has_orbit_radius = parse_double(val, &out->orbit_radius);
+      } else if (strcmp(key, "primary_radius") == 0) {
+        out->has_primary_radius = parse_double(val, &out->primary_radius);
+      } else if (strcmp(key, "secondary_radius") == 0) {
+        out->has_secondary_radius = parse_double(val, &out->secondary_radius);
+      } else if (strcmp(key, "center_radius") == 0) {
+        out->has_center_radius = parse_double(val, &out->center_radius);
       } else if (strcmp(key, "n") == 0) {
         out->has_n = parse_int(val, &out->n);
       } else if (strcmp(key, "disk_radius") == 0) {
@@ -421,6 +458,26 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
         out->has_seed = parse_u32(val, &out->seed);
       } else if (strcmp(key, "noise") == 0) {
         out->has_noise = parse_double(val, &out->noise);
+      } else if (strcmp(key, "time_scale") == 0) {
+        out->has_time_scale = parse_double(val, &out->time_scale);
+      } else if (strcmp(key, "cam_cx") == 0) {
+        out->has_cam_cx = parse_double(val, &out->cam_cx);
+      } else if (strcmp(key, "cam_cy") == 0) {
+        out->has_cam_cy = parse_double(val, &out->cam_cy);
+      } else if (strcmp(key, "cam_cz") == 0) {
+        out->has_cam_cz = parse_double(val, &out->cam_cz);
+      } else if (strcmp(key, "cam_yaw") == 0) {
+        out->has_cam_yaw = parse_double(val, &out->cam_yaw);
+      } else if (strcmp(key, "cam_pitch") == 0) {
+        out->has_cam_pitch = parse_double(val, &out->cam_pitch);
+      } else if (strcmp(key, "cam_zoom_world_h") == 0) {
+        out->has_cam_zoom_world_h = parse_double(val, &out->cam_zoom_world_h);
+      } else if (strcmp(key, "selected_name") == 0) {
+        out->has_selected_name = true;
+        strncpy(out->selected_name, val, sizeof(out->selected_name) - 1);
+        out->selected_name[sizeof(out->selected_name) - 1] = 0;
+      } else if (strcmp(key, "follow_selected") == 0) {
+        out->has_follow_selected = parse_bool(val, &out->follow_selected);
       }
     } else {
       if (strcmp(key, "name") == 0) {
@@ -458,6 +515,172 @@ static bool load_preset_yaml(const char *preset_name, PresetYaml *out,
 
   fclose(f);
   return out->found;
+}
+
+static void preset_apply_sim_overrides(Sim *sim, const PresetYaml *py) {
+  if (!sim || !py)
+    return;
+  if (py->has_sim_G)
+    sim->G = py->sim_G;
+  if (py->has_sim_softening)
+    sim->softening = py->sim_softening;
+  if (py->has_sim_density)
+    sim->density = py->sim_density;
+  if (py->has_sim_merge_on_collision)
+    sim->merge_on_collision = py->sim_merge_on_collision;
+}
+
+static uint32_t preset_select_by_name(const Sim *sim, const char *name) {
+  if (!sim || !name || !name[0])
+    return 0;
+  for (size_t i = 0; i < sim->count; i++) {
+    if (strcmp(sim->bodies[i].name, name) == 0)
+      return sim->bodies[i].id;
+  }
+  return 0;
+}
+
+bool preset_apply_from_yaml(const char *preset_name, Sim *sim, Camera *cam,
+                            double *time_scale, uint32_t *selected_id,
+                            bool *follow_selected) {
+  if (!preset_name || !sim)
+    return false;
+
+  PresetYaml py;
+  const char *used_path = NULL;
+  if (!load_preset_yaml(preset_name, &py, &used_path))
+    return false;
+
+  sim_reset(sim);
+  // Reset sim parameters to known defaults (sim_reset() does not).
+  sim->G = 1.0;
+  sim->softening = 0.01;
+  sim->density = 1.0;
+  sim->merge_on_collision = true;
+  preset_apply_sim_overrides(sim, &py);
+
+  if (py.kind == PRESET_YAML_KIND_BODIES) {
+    if (py.body_count == 0) {
+      preset_yaml_destroy(&py);
+      return false;
+    }
+    add_body_init_list(sim, py.bodies, py.body_count);
+  } else if (py.kind == PRESET_YAML_KIND_TWO_BODY) {
+    if (!py.has_primary_mass || !py.has_secondary_mass || !py.has_orbit_radius ||
+        !py.has_primary_radius || !py.has_secondary_radius) {
+      preset_yaml_destroy(&py);
+      return false;
+    }
+    const double r = py.orbit_radius;
+    const double r_safe = fmax(r, 1e-9);
+    const double v = sqrt(sim->G * py.primary_mass / r_safe);
+
+    (void)sim_add_body(sim, (Body){.name = "Primary",
+                                   .x = 0.0,
+                                   .y = 0.0,
+                                   .vx = 0.0,
+                                   .vy = 0.0,
+                                   .mass = py.primary_mass,
+                                   .radius = py.primary_radius,
+                                   .render_radius = py.primary_radius,
+                                   .r = 1.0f,
+                                   .g = 0.9f,
+                                   .b = 0.6f});
+    (void)sim_add_body(sim, (Body){.name = "Secondary",
+                                   .x = r,
+                                   .y = 0.0,
+                                   .vx = 0.0,
+                                   .vy = v,
+                                   .mass = py.secondary_mass,
+                                   .radius = py.secondary_radius,
+                                   .render_radius = py.secondary_radius,
+                                   .r = 0.5f,
+                                   .g = 0.8f,
+                                   .b = 1.0f});
+  } else if (py.kind == PRESET_YAML_KIND_DISK_GALAXY) {
+    if (!py.has_n || !py.has_disk_radius || !py.has_central_mass ||
+        !py.has_center_radius || !py.has_seed || !py.has_noise) {
+      preset_yaml_destroy(&py);
+      return false;
+    }
+
+    (void)sim_add_body(sim, (Body){.name = "Center",
+                                   .x = 0.0,
+                                   .y = 0.0,
+                                   .vx = 0.0,
+                                   .vy = 0.0,
+                                   .mass = py.central_mass,
+                                   .radius = py.center_radius,
+                                   .render_radius = py.center_radius,
+                                   .r = 1.0f,
+                                   .g = 0.85f,
+                                   .b = 0.5f});
+
+    uint32_t rng = py.seed;
+    for (int i = 0; i < py.n; i++) {
+      const double u = frand01(&rng);
+      const double vv = frand01(&rng);
+      const double rr = py.disk_radius * sqrt(u);
+      const double a = vv * 2.0 * M_PI;
+      const double x = rr * cos(a);
+      const double y = rr * sin(a);
+
+      const double speed = sqrt(sim->G * py.central_mass / fmax(rr, 1e-3));
+      const double tx = -sin(a);
+      const double ty = cos(a);
+      const double noise = (frand01(&rng) - 0.5) * py.noise;
+
+      Body b = {0};
+      b.x = x;
+      b.y = y;
+      b.vx = tx * speed * (1.0 + noise);
+      b.vy = ty * speed * (1.0 + noise);
+      b.mass = 1.0 + 15.0 * frand01(&rng);
+      b.r = (float)(0.4 + 0.6 * frand01(&rng));
+      b.g = (float)(0.4 + 0.6 * frand01(&rng));
+      b.b = 1.0f;
+      (void)sim_add_body(sim, b);
+    }
+  } else {
+    preset_yaml_destroy(&py);
+    return false;
+  }
+
+  if (cam) {
+    if (py.has_cam_cx)
+      cam->cx = py.cam_cx;
+    if (py.has_cam_cy)
+      cam->cy = py.cam_cy;
+    if (py.has_cam_cz)
+      cam->cz = py.cam_cz;
+    if (py.has_cam_yaw)
+      cam->yaw = py.cam_yaw;
+    if (py.has_cam_pitch)
+      cam->pitch = py.cam_pitch;
+    if (py.has_cam_zoom_world_h)
+      cam->zoom_world_h = py.cam_zoom_world_h;
+  }
+
+  if (time_scale && py.has_time_scale)
+    *time_scale = py.time_scale;
+
+  if (follow_selected && py.has_follow_selected)
+    *follow_selected = py.follow_selected;
+
+  if (selected_id) {
+    if (py.has_selected_name) {
+      *selected_id = preset_select_by_name(sim, py.selected_name);
+      if (!*selected_id && follow_selected)
+        *follow_selected = false;
+    } else {
+      *selected_id = 0;
+    }
+  }
+
+  fprintf(stderr, "Loaded preset %s from %s\n", preset_name,
+          used_path ? used_path : "(unknown)");
+  preset_yaml_destroy(&py);
+  return true;
 }
 
 static void add_body_init_list(Sim *sim, const BodyInit *bodies, size_t count) {
@@ -498,6 +721,10 @@ static void add_body_init_list(Sim *sim, const BodyInit *bodies, size_t count) {
 }
 
 void preset_seed_two_body_orbit(Sim *sim) {
+  if (preset_apply_from_yaml("two_body", sim, NULL, NULL, NULL, NULL))
+    return;
+
+  // Fallback if YAML is missing.
   sim_reset(sim);
   sim->G = 1.0;
   sim->softening = 0.02;
@@ -566,6 +793,10 @@ void preset_seed_two_body_orbit(Sim *sim) {
 
 void preset_seed_disk_galaxy(Sim *sim, int n, double disk_radius,
                              double central_mass) {
+  if (preset_apply_from_yaml("disk_galaxy", sim, NULL, NULL, NULL, NULL))
+    return;
+
+  // Fallback if YAML is missing.
   sim_reset(sim);
   sim->G = 1.0;
   sim->softening = 0.05;
@@ -653,6 +884,10 @@ void preset_seed_disk_galaxy(Sim *sim, int n, double disk_radius,
 }
 
 void preset_seed_solar_system(Sim *sim) {
+  if (preset_apply_from_yaml("solar_system", sim, NULL, NULL, NULL, NULL))
+    return;
+
+  // Fallback if YAML is missing.
   // Accurate-ish 3D initial conditions from JPL Horizons (DE441),
   // barycentric ecliptic-of-J2000 frame at 2000-01-01 00:00 TDB.
   // Units in this simulation:

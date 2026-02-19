@@ -449,7 +449,6 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Gravity threads: %d\n", threads);
     fprintf(stderr, "Metal gravity: %s\n", sim.use_metal ? "on" : "off");
   }
-  preset_seed_solar_system(&sim);
 
   enum {
     PRESET_TWO_BODY = 1,
@@ -464,8 +463,8 @@ int main(int argc, char **argv) {
                 .cy = 0.0,
                 .cz = 0.0,
                 .yaw = 0.0,
-                .pitch = -1.24,
-                .zoom_world_h = 4.0};
+                .pitch = 0.0,
+                .zoom_world_h = 10.0};
 
   bool running = true;
   bool paused = false;
@@ -501,7 +500,7 @@ int main(int argc, char **argv) {
 
   // Interpreted as "simulation time units per real second".
   // For the solar-system preset, units are years.
-  double time_scale = 0.03;
+  double time_scale = 1.0;
   const double fixed_dt = 1.0e-4;
   double accumulator = 0.0;
   double sim_time = 0.0;
@@ -514,9 +513,21 @@ int main(int argc, char **argv) {
 
   print_controls();
 
-  // Select the Sun by default (first body in solar system preset).
-  if (sim.count)
-    selected_id = sim.bodies[0].id;
+  // Apply initial preset from YAML.
+  if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
+                              &selected_id, &follow_selected)) {
+    preset_seed_solar_system(&sim);
+    preset = PRESET_SOLAR;
+    cam = (Camera){.cx = 0.0,
+                   .cy = 0.0,
+                   .cz = 0.0,
+                   .yaw = 0.0,
+                   .pitch = -1.24,
+                   .zoom_world_h = 4.0};
+    time_scale = 0.03;
+    selected_id = sim.count ? sim.bodies[0].id : 0;
+    follow_selected = false;
+  }
 
   Camera last_cam_printed = cam;
   bool last_cam_printed_init = false;
@@ -561,58 +572,70 @@ int main(int argc, char **argv) {
           paused = !paused;
           break;
         case SDLK_r:
-          preset_seed_solar_system(&sim);
+          if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
+                                      &selected_id, &follow_selected)) {
+            preset_seed_solar_system(&sim);
+            cam.cx = 0.0;
+            cam.cy = 0.0;
+            cam.cz = 0.0;
+            cam.yaw = 0.0;
+            cam.pitch = -1.24, cam.zoom_world_h = 4.0;
+            time_scale = 0.03;
+            selected_id = sim.count ? sim.bodies[0].id : 0;
+            follow_selected = false;
+          }
           preset = PRESET_SOLAR;
           sim_time = 0.0;
-          cam.cx = 0.0;
-          cam.cy = 0.0;
-          cam.cz = 0.0;
-          cam.yaw = 0.0;
-          cam.pitch = -1.24, cam.zoom_world_h = 4.0;
-          time_scale = 0.03;
-          selected_id = sim.count ? sim.bodies[0].id : 0;
-          follow_selected = false;
           break;
         case SDLK_1:
-          preset_seed_two_body_orbit(&sim);
+          if (!preset_apply_from_yaml("two_body", &sim, &cam, &time_scale,
+                                      &selected_id, &follow_selected)) {
+            preset_seed_two_body_orbit(&sim);
+            cam.cx = 0.0;
+            cam.cy = 0.0;
+            cam.cz = 0.0;
+            cam.yaw = 0.0;
+            cam.pitch = 0.0;
+            cam.zoom_world_h = 40.0;
+            time_scale = 1.0;
+            selected_id = 0;
+            follow_selected = false;
+          }
           preset = PRESET_TWO_BODY;
           sim_time = 0.0;
-          cam.cx = 0.0;
-          cam.cy = 0.0;
-          cam.cz = 0.0;
-          cam.yaw = 0.0;
-          cam.pitch = 0.0;
-          cam.zoom_world_h = 40.0;
-          time_scale = 1.0;
-          selected_id = 0;
-          follow_selected = false;
           break;
         case SDLK_2:
-          preset_seed_disk_galaxy(&sim, 1500, 140.0, 2.0e6);
+          if (!preset_apply_from_yaml("disk_galaxy", &sim, &cam, &time_scale,
+                                      &selected_id, &follow_selected)) {
+            preset_seed_disk_galaxy(&sim, 1500, 140.0, 2.0e6);
+            cam.cx = 0.0;
+            cam.cy = 0.0;
+            cam.cz = 0.0;
+            cam.yaw = 0.0;
+            cam.pitch = 0.0;
+            cam.zoom_world_h = 320.0;
+            time_scale = 1.0;
+            selected_id = 0;
+            follow_selected = false;
+          }
           preset = PRESET_GALAXY;
           sim_time = 0.0;
-          cam.cx = 0.0;
-          cam.cy = 0.0;
-          cam.cz = 0.0;
-          cam.yaw = 0.0;
-          cam.pitch = 0.0;
-          cam.zoom_world_h = 320.0;
-          time_scale = 1.0;
-          selected_id = 0;
-          follow_selected = false;
           break;
         case SDLK_3:
-          preset_seed_solar_system(&sim);
+          if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
+                                      &selected_id, &follow_selected)) {
+            preset_seed_solar_system(&sim);
+            cam.cx = 0.0;
+            cam.cy = 0.0;
+            cam.cz = 0.0;
+            cam.yaw = 0.0;
+            cam.pitch = -1.24, cam.zoom_world_h = 4.0;
+            time_scale = 0.03;
+            selected_id = sim.count ? sim.bodies[0].id : 0;
+            follow_selected = false;
+          }
           preset = PRESET_SOLAR;
           sim_time = 0.0;
-          cam.cx = 0.0;
-          cam.cy = 0.0;
-          cam.cz = 0.0;
-          cam.yaw = 0.0;
-          cam.pitch = -1.24, cam.zoom_world_h = 4.0;
-          time_scale = 0.03;
-          selected_id = sim.count ? sim.bodies[0].id : 0;
-          follow_selected = false;
           break;
         case SDLK_c:
           sim_reset(&sim);
