@@ -74,6 +74,15 @@ Performance tips:
 - CPU threads (gravity): `UNIVERSE_THREADS=8 ./build/universe`
 - macOS Metal compute (gravity): `UNIVERSE_METAL=1 ./build/universe`
 
+## Presets YAML
+
+Preset definitions live in `data/presets.yaml`.
+
+- Override path: `UNIVERSE_PRESETS_YAML=/path/to/presets.yaml ./build/universe`
+- Each entry under `presets:` can be either:
+  - `kind: bodies` with a `bodies:` list (like the solar system)
+  - `kind: two_body` / `kind: disk_galaxy` with generator parameters
+
 ## Controls
 
 - `F1`: toggle on-screen help

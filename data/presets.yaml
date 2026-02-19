@@ -1,0 +1,148 @@
+version: 1
+
+presets:
+  solar_system:
+    kind: bodies
+    sim_G: 39.47841760435743 # 4*pi^2
+    sim_softening: 1.0e-6
+    sim_merge_on_collision: false
+    bodies:
+      - name: Sun
+        mass_solar: 1.0
+        radius_km: 695700.0
+        tex_layer: TEX_SUN
+        tilt_deg: 7.25
+        rotation_period_days: 25.38
+        x_km: -1.068108951496322E+06
+        y_km: -4.177210908491462E+05
+        z_km: 3.086887010002915E+04
+        vx_km_s: 9.305302656256911E-03
+        vy_km_s: -1.283177282717393E-02
+        vz_km_s: -1.631700118015769E-04
+
+      - name: Mercury
+        mass_solar: 1.660e-7
+        radius_km: 2439.7
+        tex_layer: TEX_MERCURY
+        tilt_deg: 0.034
+        rotation_period_days: 58.646
+        x_km: -2.212073002393702E+07
+        y_km: -6.682435921338345E+07
+        z_km: -3.461577076477692E+06
+        vx_km_s: 3.666229234452722E+01
+        vy_km_s: -1.230266984222893E+01
+        vz_km_s: -4.368336206255391E+00
+
+      - name: Venus
+        mass_solar: 2.447e-6
+        radius_km: 6051.8
+        tex_layer: TEX_VENUS
+        tilt_deg: 177.36
+        rotation_period_days: -243.025
+        x_km: -1.075068040813442E+08
+        y_km: -1.053381041265540E+07
+        z_km: 6.024630234834461E+06
+        vx_km_s: 2.949586892816910E+00
+        vy_km_s: -3.520915385418408E+01
+        vz_km_s: -5.945882137071832E-01
+
+      - name: Earth
+        mass_solar: 3.003e-6
+        radius_km: 6371.0
+        tex_layer: TEX_EARTH
+        tilt_deg: 23.439
+        rotation_period_days: 0.99726968
+        x_km: -2.521092392536846E+07
+        y_km: 1.449177150228508E+08
+        z_km: -2.394650324223201E+04
+        vx_km_s: -2.983862964912880E+01
+        vy_km_s: -5.218619426624726E+00
+        vz_km_s: 1.193210383927141E-03
+
+      - name: Mars
+        mass_solar: 3.227e-7
+        radius_km: 3389.5
+        tex_layer: TEX_MARS
+        tilt_deg: 25.19
+        rotation_period_days: 1.02595675
+        x_km: -2.155838897834890E+08
+        y_km: -3.539753056080124E+07
+        z_km: 4.532312700768938E+06
+        vx_km_s: 3.886195690590875E+00
+        vy_km_s: -2.315847231020980E+01
+        vz_km_s: -5.777378581341476E-01
+
+      - name: Jupiter
+        mass_solar: 9.545e-4
+        radius_km: 69911.0
+        tex_layer: TEX_JUPITER
+        tilt_deg: 3.13
+        rotation_period_days: 0.41354
+        x_km: 5.990175449652451E+08
+        y_km: 4.394132557364160E+08
+        z_km: -1.520962039552424E+07
+        vx_km_s: -7.882322868602207E+00
+        vy_km_s: 1.134831390779115E+01
+        vz_km_s: 1.246425392362529E-01
+
+      - name: Saturn
+        mass_solar: 2.858e-4
+        radius_km: 58232.0
+        tex_layer: TEX_SATURN
+        tilt_deg: 26.73
+        rotation_period_days: 0.44401
+        x_km: 9.587267807903839E+08
+        y_km: -9.825068848392826E+08
+        z_km: -1.695064654623866E+07
+        vx_km_s: 5.908189281781105E+00
+        vy_km_s: 6.296823371892003E+00
+        vz_km_s: -3.704231008630100E-01
+
+      - name: Uranus
+        mass_solar: 4.366e-5
+        radius_km: 25362.0
+        tex_layer: TEX_URANUS
+        tilt_deg: 97.77
+        rotation_period_days: -0.71833
+        x_km: 2.158708519561221E+09
+        y_km: 2.058822953381595E+09
+        z_km: -1.785026690391928E+07
+        vx_km_s: -4.813504855508626E+00
+        vy_km_s: 4.665693498302723E+00
+        vz_km_s: 8.548558001407977E-02
+
+      - name: Neptune
+        mass_solar: 5.151e-5
+        radius_km: 24622.0
+        tex_layer: TEX_NEPTUNE
+        tilt_deg: 28.32
+        rotation_period_days: 0.67125
+        x_km: 2.510985726269384E+09
+        y_km: -3.732999840511448E+09
+        z_km: 1.873087787685826E+07
+        vx_km_s: 4.445846366126391E+00
+        vy_km_s: 3.067772238252208E+00
+        vz_km_s: -1.638828425643102E-01
+
+  two_body:
+    kind: two_body
+    sim_G: 1.0
+    sim_softening: 0.02
+    sim_density: 2.0
+    sim_merge_on_collision: true
+    primary_mass: 1.0e6
+    secondary_mass: 10.0
+    orbit_radius: 30.0
+
+  disk_galaxy:
+    kind: disk_galaxy
+    sim_G: 1.0
+    sim_softening: 0.05
+    sim_density: 1.5
+    sim_merge_on_collision: true
+    n: 1500
+    disk_radius: 140.0
+    central_mass: 2.0e6
+    seed: 0x12345678
+    noise: 0.08
+

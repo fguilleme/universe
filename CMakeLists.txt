@@ -32,6 +32,7 @@ add_executable(universe
   src/ui_text.c
   src/ui_overlay.c
   src/ui_labels.c
+  src/dump_yaml.c
   src/input_mouse.c
   src/mat4.c
   src/camera.c

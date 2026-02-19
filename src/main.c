@@ -34,6 +34,7 @@
 
 #include "camera.h"
 #include "mat4.h"
+#include "dump_yaml.h"
 
 static bool camera_changed(const Camera *a, const Camera *b) {
   const double eps_pos = 1e-6;
@@ -109,6 +110,22 @@ static char *resolve_assets_dir(void) {
   }
 
   return strdup("assets");
+}
+
+static char *resolve_bodies_yaml_path(void) {
+  const char *env = getenv("UNIVERSE_BODIES_YAML");
+  if (env && env[0])
+    return strdup(env);
+
+  // Prefer dumping into build/ since it's already gitignored.
+  if (dir_exists("build"))
+    return strdup("build/bodies.yaml");
+
+  // If launched from build directory.
+  if (dir_exists("../build"))
+    return strdup("../build/bodies.yaml");
+
+  return strdup("bodies.yaml");
 }
 
 enum {
@@ -243,6 +260,7 @@ static void print_controls(void) {
                   "  F1: toggle help\n"
                   "  F2: toggle body labels\n"
                   "  F3: toggle realistic scaling\n"
+                  "  Y: dump bodies to YAML (UNIVERSE_BODIES_YAML=...)\n"
                   "  RMB drag: spawn body with velocity\n"
                   "    (hold Ctrl for circular orbit; Alt reverses)\n"
                   "  LMB click: select nearest body\n"
@@ -465,7 +483,7 @@ int main(int argc, char **argv) {
   bool show_trails = true;
   bool show_vectors = true;
   double vector_scale = 0.02;
-  double render_radius_scale = 2.5;
+  double render_radius_scale = 1.6;
   size_t trail_draw_len = TRAIL_LEN;
 
   Trail *trails = NULL;
@@ -524,6 +542,18 @@ int main(int argc, char **argv) {
           fprintf(stderr, "realistic_scale: %s\n",
                   realistic_scale ? "on" : "off");
           break;
+        case SDLK_y: {
+          char *out_path = resolve_bodies_yaml_path();
+          const bool ok =
+              out_path ? dump_bodies_yaml(out_path, &sim, sim_time) : false;
+          if (ok) {
+            fprintf(stderr, "Wrote YAML: %s\n", out_path);
+          } else {
+            fprintf(stderr, "Failed to write YAML: %s\n",
+                    out_path ? out_path : "(null)");
+          }
+          free(out_path);
+        } break;
         case SDLK_ESCAPE:
           running = false;
           break;
