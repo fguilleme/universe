@@ -1,0 +1,9 @@
+build/
+.DS_Store
+
+# Optional texture assets (not committed)
+assets/*.jpg
+assets/*.jpeg
+assets/*.png
+assets/*.hdr
+/.cache/clangd/index
