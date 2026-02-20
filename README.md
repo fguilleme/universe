@@ -23,6 +23,7 @@ Recommended filenames:
 - `assets/2k_mercury.jpg`
 - `assets/2k_venus_surface.jpg`
 - `assets/2k_earth_daymap.jpg`
+- `assets/2k_moon.jpg`
 - `assets/2k_mars.jpg`
 - `assets/2k_jupiter.jpg`
 - `assets/2k_saturn.jpg`

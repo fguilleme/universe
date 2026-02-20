@@ -35,7 +35,8 @@ static double visual_radius_from_physical(double r_au, double extra_scale) {
   // Exaggerate sizes while keeping relative ordering.
   // Use a low exponent to keep smaller bodies visible without making the Sun
   // unrealistically large compared to orbital distances.
-  return pow(fmax(r_au, 1e-12), 0.30) * 0.60 * extra_scale;
+  // Tuned so the Earth-Moon system remains readable in the solar preset.
+  return pow(fmax(r_au, 1e-12), 0.50) * 0.35 * extra_scale;
 }
 
 static bool file_exists(const char *path) {
@@ -188,6 +189,8 @@ static uint32_t parse_tex_layer(const char *s) {
     return TEX_VENUS;
   if (strcmp(s, "TEX_EARTH") == 0)
     return TEX_EARTH;
+  if (strcmp(s, "TEX_MOON") == 0)
+    return TEX_MOON;
   if (strcmp(s, "TEX_MARS") == 0)
     return TEX_MARS;
   if (strcmp(s, "TEX_JUPITER") == 0)

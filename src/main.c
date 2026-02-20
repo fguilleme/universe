@@ -13,18 +13,18 @@
 #include <sys/stat.h>
 
 #include "glutil.h"
+#include "input_mouse.h"
+#include "presets.h"
 #include "render_bg.h"
 #include "render_lines.h"
 #include "render_particles.h"
 #include "render_rings.h"
 #include "scene_fbo.h"
-#include "presets.h"
-#include "input_mouse.h"
 #include "shaders.h"
 #include "sim.h"
 #include "textures.h"
-#include "ui_overlay.h"
 #include "ui_labels.h"
+#include "ui_overlay.h"
 #include "ui_text.h"
 #include "util.h"
 
@@ -33,8 +33,8 @@
 #endif
 
 #include "camera.h"
-#include "mat4.h"
 #include "dump_yaml.h"
+#include "mat4.h"
 
 static bool camera_changed(const Camera *a, const Camera *b) {
   const double eps_pos = 1e-6;
@@ -212,6 +212,16 @@ static Trail *trails_get_or_add(Trail **trails, size_t *trail_count,
   memset(out, 0, sizeof(*out));
   out->id = id;
   return out;
+}
+
+static void trails_clear(Trail **trails, size_t *trail_count,
+                         size_t *trail_cap) {
+  if (!trails || !trail_count || !trail_cap)
+    return;
+  free(*trails);
+  *trails = NULL;
+  *trail_count = 0;
+  *trail_cap = 0;
 }
 
 static void trails_compact_live(Trail *trails, size_t *trail_count,
@@ -516,9 +526,8 @@ int main(int argc, char **argv) {
   // Apply initial preset from YAML.
   if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                               &selected_id, &follow_selected)) {
-    fprintf(stderr,
-            "Failed to load preset 'solar_system' from presets YAML. "
-            "(Set UNIVERSE_PRESETS_YAML=...)\n");
+    fprintf(stderr, "Failed to load preset 'solar_system' from presets YAML. "
+                    "(Set UNIVERSE_PRESETS_YAML=...)\n");
     return 1;
   }
   preset = PRESET_SOLAR;
@@ -566,6 +575,7 @@ int main(int argc, char **argv) {
           paused = !paused;
           break;
         case SDLK_r:
+          trails_clear(&trails, &trail_count, &trail_cap);
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -577,6 +587,7 @@ int main(int argc, char **argv) {
           accumulator = 0.0;
           break;
         case SDLK_1:
+          trails_clear(&trails, &trail_count, &trail_cap);
           if (!preset_apply_from_yaml("two_body", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -588,6 +599,7 @@ int main(int argc, char **argv) {
           accumulator = 0.0;
           break;
         case SDLK_2:
+          trails_clear(&trails, &trail_count, &trail_cap);
           if (!preset_apply_from_yaml("disk_galaxy", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -599,6 +611,7 @@ int main(int argc, char **argv) {
           accumulator = 0.0;
           break;
         case SDLK_3:
+          trails_clear(&trails, &trail_count, &trail_cap);
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -610,6 +623,7 @@ int main(int argc, char **argv) {
           accumulator = 0.0;
           break;
         case SDLK_c:
+          trails_clear(&trails, &trail_count, &trail_cap);
           sim_reset(&sim);
           sim_time = 0.0;
           selected_id = 0;
@@ -1028,14 +1042,13 @@ int main(int argc, char **argv) {
         }
       }
       if (line_count + 2 <= line_cpu_cap) {
-        line_cpu[line_count++] = (LineVertex){
-            .x = (float)mouse.spawn_start_wx,
-            .y = (float)mouse.spawn_start_wy,
-            .z = (float)mouse.spawn_start_wz,
-            .r = 1.0f,
-            .g = 1.0f,
-            .b = 1.0f,
-            .a = 0.9f};
+        line_cpu[line_count++] = (LineVertex){.x = (float)mouse.spawn_start_wx,
+                                              .y = (float)mouse.spawn_start_wy,
+                                              .z = (float)mouse.spawn_start_wz,
+                                              .r = 1.0f,
+                                              .g = 1.0f,
+                                              .b = 1.0f,
+                                              .a = 0.9f};
         line_cpu[line_count++] = (LineVertex){.x = (float)mwx,
                                               .y = (float)mwy,
                                               .z = (float)mwz,
@@ -1290,9 +1303,8 @@ int main(int argc, char **argv) {
     }
 
     if (show_labels) {
-      ui_draw_body_labels(&ui, &text_cpu, &text_cpu_cap, dw, dh,
-                          &world_to_clip, &cam, &sim, realistic_scale,
-                          render_radius_scale);
+      ui_draw_body_labels(&ui, &text_cpu, &text_cpu_cap, dw, dh, &world_to_clip,
+                          &cam, &sim, realistic_scale, render_radius_scale);
     }
 
     // Other overlays (help, camera HUD, depth HUD, scaling mode) moved to

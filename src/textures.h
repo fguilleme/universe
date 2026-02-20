@@ -13,7 +13,8 @@ enum {
   TEX_SATURN = 7,
   TEX_URANUS = 8,
   TEX_NEPTUNE = 9,
-  TEX_LAYER_COUNT = 10,
+  TEX_MOON = 10,
+  TEX_LAYER_COUNT = 11,
 };
 
 // Creates a GL_TEXTURE_2D_ARRAY with TEX_LAYER_COUNT layers.
@@ -23,6 +24,7 @@ enum {
 //   2k_mercury.jpg
 //   2k_venus_surface.jpg
 //   2k_earth_daymap.jpg
+//   2k_moon.jpg
 //   2k_mars.jpg
 //   2k_jupiter.jpg
 //   2k_saturn.jpg

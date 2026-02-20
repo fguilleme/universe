@@ -69,6 +69,20 @@ presets:
         vy_km_s: -5.218619426624726E+00
         vz_km_s: 1.193210383927141E-03
 
+      - name: Moon
+        mass_solar: 3.694e-8
+        radius_km: 1737.4
+        tex_layer: TEX_MOON
+        tilt_deg: 6.68
+        rotation_period_days: 27.321661
+        # NOTE: Ensure Earth-Moon separation is ~384,000 km.
+        x_km: -2.555736488197257E+07
+        y_km: 1.447553650963163E+08
+        z_km: -1.257808280410325E+03
+        vx_km_s: -2.926974096801152E+01
+        vy_km_s: -6.020397935372383E+00
+        vz_km_s: -1.740818643718001E-03
+
       - name: Mars
         mass_solar: 3.227e-7
         radius_km: 3389.5
