@@ -42,7 +42,7 @@ void ui_draw_selected_hud(const UiTextRenderer *tr, TextVertex **verts,
     char hud[256];
     snprintf(hud, sizeof(hud), "Selected: %s", sel->name);
     size_t count = 0;
-    text_append(verts, &count, cap, 12.0f, 12.0f, 1.0f, hud);
+    text_append(verts, &count, cap, 12.0f, 12.0f, 1.6f, hud);
     ui_text_draw(tr, *verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0, 0.55f);
     ui_text_draw(tr, *verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.9f);
   }
@@ -118,4 +118,3 @@ void ui_draw_body_labels(const UiTextRenderer *tr, TextVertex **verts,
   glDepthMask(GL_TRUE);
   glEnable(GL_DEPTH_TEST);
 }
-

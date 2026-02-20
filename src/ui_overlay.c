@@ -7,9 +7,9 @@
 #include "shaders.h"
 #include "util.h"
 
-static void ui_text_draw(const UiTextRenderer *tr, TextVertex *verts,
-                         size_t count, int dw, int dh, float offx, float offy,
-                         float r, float g, float b, float a) {
+void ui_text_renderer_draw(const UiTextRenderer *tr, const TextVertex *verts,
+                           size_t count, int dw, int dh, float offx, float offy,
+                           float r, float g, float b, float a) {
   if (!count)
     return;
   glBindVertexArray(tr->vao);
@@ -111,8 +111,10 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
                                   (double)dw - 4.0 - text_w);
     const float y = 10.0f;
     text_append(&verts, &count, &cap, x, y, scale, dt);
-    ui_text_draw(tr, verts, count, dw, dh, 2.0f, 2.0f, 0, 0, 0, 0.65f);
-    ui_text_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.95f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 2.0f, 2.0f, 0, 0, 0,
+                          0.65f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1,
+                          0.95f);
     count = 0;
   }
 
@@ -133,6 +135,7 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
         "LMB drag: rotate camera",
         "MMB drag / WASD: pan",
         "Wheel: zoom",
+        "Z: zoom to selected",
         "F: follow selected",
         "T: trails   V: velocity vectors",
         "PgUp/PgDn: trail length",
@@ -148,8 +151,10 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
       text_append(&verts, &count, &cap, x0, y0, scale, lines[i]);
       y0 += 10.0f * scale;
     }
-    ui_text_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0, 0.55f);
-    ui_text_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.88f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0,
+                          0.55f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1,
+                          0.88f);
     count = 0;
   }
 
@@ -166,8 +171,10 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
                                   (double)dw - 4.0 - text_w);
     const float y = (float)dh - (8.0f * scale) - 8.0f - 22.0f;
     text_append(&verts, &count, &cap, x, y, scale, cam_txt);
-    ui_text_draw(tr, verts, count, dw, dh, 2.0f, 2.0f, 0, 0, 0, 0.55f);
-    ui_text_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.85f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 2.0f, 2.0f, 0, 0, 0,
+                          0.55f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1,
+                          0.85f);
     count = 0;
   }
 
@@ -183,8 +190,10 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
     const float x = 12.0f;
     const float y = (float)dh - (8.0f * scale) - 6.0f;
     text_append(&verts, &count, &cap, x, y, scale, dbg);
-    ui_text_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0, 0.55f);
-    ui_text_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.75f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0,
+                          0.55f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1,
+                          0.75f);
     count = 0;
   }
 
@@ -198,8 +207,10 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
                                   (double)dw - 4.0 - text_w);
     const float y = (float)dh - (8.0f * scale) - 6.0f;
     text_append(&verts, &count, &cap, x, y, scale, mode);
-    ui_text_draw(tr, verts, count, dw, dh, 1.5f, 1.5f, 0, 0, 0, 0.55f);
-    ui_text_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.80f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 1.5f, 1.5f, 0, 0, 0,
+                          0.55f);
+    ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1,
+                          0.80f);
     count = 0;
   }
 
@@ -207,4 +218,3 @@ void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
   glDepthMask(GL_TRUE);
   glEnable(GL_DEPTH_TEST);
 }
-

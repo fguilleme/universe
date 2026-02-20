@@ -224,6 +224,200 @@ static void trails_clear(Trail **trails, size_t *trail_count,
   *trail_cap = 0;
 }
 
+static void world_to_view(const Camera *cam, double wx, double wy, double wz,
+                          double *vx, double *vy, double *vz) {
+  const double dx = wx - cam->cx;
+  const double dy = wy - cam->cy;
+  const double dz = wz - cam->cz;
+
+  const double cy = cos(cam->yaw);
+  const double sy = sin(cam->yaw);
+  const double x1 = cy * dx - sy * dy;
+  const double y1 = sy * dx + cy * dy;
+  const double z1 = dz;
+
+  const double cp = cos(cam->pitch);
+  const double sp = sin(cam->pitch);
+  const double x2 = x1;
+  const double y2 = cp * y1 - sp * z1;
+  const double z2 = sp * y1 + cp * z1;
+
+  *vx = x2;
+  *vy = y2;
+  *vz = z2;
+}
+
+static double camera_zoom_needed_to_include_point(const Camera *cam, int dw,
+                                                  int dh, double wx, double wy,
+                                                  double wz, double pad_world) {
+  if (!cam || dw <= 0 || dh <= 0)
+    return cam ? cam->zoom_world_h : 1.0;
+  const double aspect = (double)dw / (double)dh;
+
+  double vx = 0.0, vy = 0.0, vz = 0.0;
+  world_to_view(cam, wx, wy, wz, &vx, &vy, &vz);
+  (void)vz;
+
+  const double need_h = 2.0 * (fabs(vy) + pad_world);
+  const double need_w = 2.0 * (fabs(vx) + pad_world) / fmax(aspect, 1e-9);
+  return fmax(need_h, need_w);
+}
+
+typedef struct {
+  const Body *b;
+} BodyListEntry;
+
+static int body_list_entry_cmp_name(const void *a, const void *b) {
+  const BodyListEntry *ea = (const BodyListEntry *)a;
+  const BodyListEntry *eb = (const BodyListEntry *)b;
+  if (!ea->b && !eb->b)
+    return 0;
+  if (!ea->b)
+    return 1;
+  if (!eb->b)
+    return -1;
+  return strcmp(ea->b->name, eb->b->name);
+}
+
+static int ui_body_list_max_visible(int dh, float y0, float line_h) {
+  const float bottom_margin = 120.0f;
+  const float avail = (float)dh - y0 - bottom_margin;
+  if (avail < line_h)
+    return 0;
+  return (int)(avail / line_h);
+}
+
+static uint32_t ui_body_list_pick_id(const Sim *sim, int dw, int dh, int mx,
+                                     int my) {
+  (void)dw;
+  if (!sim)
+    return 0;
+
+  const float scale = 2.0f;
+  const float x0 = 12.0f;
+  const float y0 = 90.0f;
+  const float line_h = 10.0f * scale;
+  const float panel_w = 260.0f;
+
+  if ((float)mx < x0 || (float)mx > x0 + panel_w)
+    return 0;
+
+  const float y_items = y0 + line_h;
+  if ((float)my < y_items)
+    return 0;
+
+  int alive = 0;
+  for (size_t i = 0; i < sim->count; i++) {
+    if (sim->bodies[i].alive)
+      alive++;
+  }
+  if (!alive)
+    return 0;
+
+  const int max_vis = ui_body_list_max_visible(dh, y0, line_h);
+  if (max_vis <= 0)
+    return 0;
+  const int vis = (alive < max_vis) ? alive : max_vis;
+
+  const int idx = (int)(((float)my - y_items) / line_h);
+  if (idx < 0 || idx >= vis)
+    return 0;
+
+  BodyListEntry *entries = (BodyListEntry *)malloc((size_t)alive * sizeof(*entries));
+  if (!entries)
+    return 0;
+  int n = 0;
+  for (size_t i = 0; i < sim->count; i++) {
+    const Body *b = &sim->bodies[i];
+    if (!b->alive)
+      continue;
+    entries[n++] = (BodyListEntry){.b = b};
+  }
+  qsort(entries, (size_t)n, sizeof(*entries), body_list_entry_cmp_name);
+  const uint32_t id = entries[idx].b ? entries[idx].b->id : 0;
+  free(entries);
+  return id;
+}
+
+static void ui_draw_body_list(const UiTextRenderer *tr, int dw, int dh,
+                              const Sim *sim, uint32_t selected_id) {
+  if (!tr || !sim)
+    return;
+
+  glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);
+
+  const float scale = 2.0f;
+  const float x0 = 12.0f;
+  float y0 = 90.0f;
+  const float line_h = 10.0f * scale;
+
+  int alive = 0;
+  for (size_t i = 0; i < sim->count; i++) {
+    if (sim->bodies[i].alive)
+      alive++;
+  }
+  if (!alive) {
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    return;
+  }
+
+  BodyListEntry *entries = (BodyListEntry *)malloc((size_t)alive * sizeof(*entries));
+  if (!entries) {
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    return;
+  }
+  int n = 0;
+  for (size_t i = 0; i < sim->count; i++) {
+    const Body *b = &sim->bodies[i];
+    if (!b->alive)
+      continue;
+    entries[n++] = (BodyListEntry){.b = b};
+  }
+  qsort(entries, (size_t)n, sizeof(*entries), body_list_entry_cmp_name);
+
+  const int max_vis = ui_body_list_max_visible(dh, y0, line_h);
+  const int vis = (n < max_vis) ? n : max_vis;
+
+  TextVertex *verts = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+
+  text_append(&verts, &count, &cap, x0, y0, scale, "Bodies");
+  ui_text_renderer_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0, 0.55f);
+  ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.85f);
+  count = 0;
+  y0 += line_h;
+
+  for (int i = 0; i < vis; i++) {
+    const Body *b = entries[i].b;
+    if (!b)
+      continue;
+    char line[64];
+    snprintf(line, sizeof(line), "%c %s", (b->id == selected_id) ? '>' : ' ',
+             b->name);
+    text_append(&verts, &count, &cap, x0, y0, scale, line);
+    y0 += line_h;
+  }
+
+  if (vis < n) {
+    char more[64];
+    snprintf(more, sizeof(more), "... (%d more)", n - vis);
+    text_append(&verts, &count, &cap, x0, y0, scale, more);
+  }
+
+  ui_text_renderer_draw(tr, verts, count, dw, dh, 1.0f, 1.0f, 0, 0, 0, 0.55f);
+  ui_text_renderer_draw(tr, verts, count, dw, dh, 0.0f, 0.0f, 1, 1, 1, 0.85f);
+
+  free(verts);
+  free(entries);
+
+  glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
+}
+
 static void trails_compact_live(Trail *trails, size_t *trail_count,
                                 const Sim *sim) {
   size_t out = 0;
@@ -271,6 +465,7 @@ static void print_controls(void) {
                   "  F2: toggle body labels\n"
                   "  F3: toggle realistic scaling\n"
                   "  Y: dump bodies to YAML (UNIVERSE_BODIES_YAML=...)\n"
+                  "  Z: zoom to selected body\n"
                   "  RMB drag: spawn body with velocity\n"
                   "    (hold Ctrl for circular orbit; Alt reverses)\n"
                   "  LMB click: select nearest body\n"
@@ -489,6 +684,17 @@ int main(int argc, char **argv) {
   uint32_t selected_id = 0;
   uint32_t last_selected_printed = 0;
   bool follow_selected = false;
+
+  bool ui_body_list_mouse_down = false;
+  uint32_t ui_body_list_down_id = 0;
+
+  uint32_t last_selected_for_zoom = 0;
+  bool zoom_anim_active = false;
+  double zoom_anim_target = 0.0;
+  bool pan_anim_active = false;
+  double pan_anim_target_cx = 0.0;
+  double pan_anim_target_cy = 0.0;
+  double pan_anim_target_cz = 0.0;
   bool show_trails = true;
   bool show_vectors = true;
   double vector_scale = 0.02;
@@ -576,6 +782,9 @@ int main(int argc, char **argv) {
           break;
         case SDLK_r:
           trails_clear(&trails, &trail_count, &trail_cap);
+          zoom_anim_active = false;
+          pan_anim_active = false;
+          last_selected_for_zoom = 0;
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -588,6 +797,9 @@ int main(int argc, char **argv) {
           break;
         case SDLK_1:
           trails_clear(&trails, &trail_count, &trail_cap);
+          zoom_anim_active = false;
+          pan_anim_active = false;
+          last_selected_for_zoom = 0;
           if (!preset_apply_from_yaml("two_body", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -600,6 +812,9 @@ int main(int argc, char **argv) {
           break;
         case SDLK_2:
           trails_clear(&trails, &trail_count, &trail_cap);
+          zoom_anim_active = false;
+          pan_anim_active = false;
+          last_selected_for_zoom = 0;
           if (!preset_apply_from_yaml("disk_galaxy", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -612,6 +827,9 @@ int main(int argc, char **argv) {
           break;
         case SDLK_3:
           trails_clear(&trails, &trail_count, &trail_cap);
+          zoom_anim_active = false;
+          pan_anim_active = false;
+          last_selected_for_zoom = 0;
           if (!preset_apply_from_yaml("solar_system", &sim, &cam, &time_scale,
                                       &selected_id, &follow_selected)) {
             fprintf(stderr,
@@ -624,6 +842,9 @@ int main(int argc, char **argv) {
           break;
         case SDLK_c:
           trails_clear(&trails, &trail_count, &trail_cap);
+          zoom_anim_active = false;
+          pan_anim_active = false;
+          last_selected_for_zoom = 0;
           sim_reset(&sim);
           sim_time = 0.0;
           selected_id = 0;
@@ -642,9 +863,43 @@ int main(int argc, char **argv) {
           break;
         case SDLK_f:
           follow_selected = !follow_selected;
+          if (follow_selected)
+            pan_anim_active = false;
           fprintf(stderr, "follow_selected: %s\n",
                   follow_selected ? "on" : "off");
           break;
+        case SDLK_z: {
+          if (!selected_id)
+            break;
+          const Body *b = find_body_by_id(&sim, selected_id);
+          if (!b)
+            break;
+          int dw2 = 1, dh2 = 1;
+          SDL_GL_GetDrawableSize(win, &dw2, &dh2);
+          const double r_world =
+              body_visual_radius_world(b, realistic_scale, render_radius_scale);
+
+          // Aim for a comfortable on-screen radius.
+          const double desired_r_px = 60.0;
+          double target_zoom =
+              (r_world > 0.0) ? (r_world * (double)dh2 / desired_r_px) : 1.0;
+
+          // Keep some surrounding context.
+          target_zoom *= 3.0;
+          // Ensure the body fits even in extreme aspect ratios.
+          target_zoom = fmax(target_zoom, r_world * 8.0);
+          target_zoom = clampd(target_zoom, 1e-3, 1e9);
+
+          zoom_anim_active = true;
+          zoom_anim_target = target_zoom;
+
+          if (!follow_selected) {
+            pan_anim_active = true;
+            pan_anim_target_cx = b->x;
+            pan_anim_target_cy = b->y;
+            pan_anim_target_cz = b->z;
+          }
+        } break;
         case SDLK_t:
           show_trails = !show_trails;
           fprintf(stderr, "trails: %s\n", show_trails ? "on" : "off");
@@ -696,13 +951,42 @@ int main(int argc, char **argv) {
       }
 
       if (e.type == SDL_MOUSEBUTTONDOWN) {
-        mouse_handle_button_down(&mouse, win, &e.button, &cam, &sim);
+        if (e.button.button == SDL_BUTTON_LEFT) {
+          int dw = 1, dh = 1;
+          SDL_GL_GetDrawableSize(win, &dw, &dh);
+          int mdx = 0, mdy = 0;
+          window_to_drawable(win, e.button.x, e.button.y, &mdx, &mdy);
+          const uint32_t hit =
+              ui_body_list_pick_id(&sim, dw, dh, mdx, mdy);
+          if (hit) {
+            ui_body_list_mouse_down = true;
+            ui_body_list_down_id = hit;
+          } else {
+            mouse_handle_button_down(&mouse, win, &e.button, &cam, &sim);
+          }
+        } else {
+          mouse_handle_button_down(&mouse, win, &e.button, &cam, &sim);
+        }
       }
 
       if (e.type == SDL_MOUSEBUTTONUP) {
-        mouse_handle_button_up(&mouse, win, &e.button, &cam, &sim,
-                               realistic_scale, render_radius_scale, spawn_mass,
-                               &selected_id, &follow_selected);
+        if (e.button.button == SDL_BUTTON_LEFT && ui_body_list_mouse_down) {
+          int dw = 1, dh = 1;
+          SDL_GL_GetDrawableSize(win, &dw, &dh);
+          int mdx = 0, mdy = 0;
+          window_to_drawable(win, e.button.x, e.button.y, &mdx, &mdy);
+          const uint32_t hit =
+              ui_body_list_pick_id(&sim, dw, dh, mdx, mdy);
+          if (hit && hit == ui_body_list_down_id) {
+            selected_id = hit;
+          }
+          ui_body_list_mouse_down = false;
+          ui_body_list_down_id = 0;
+        } else {
+          mouse_handle_button_up(
+              &mouse, win, &e.button, &cam, &sim, realistic_scale,
+              render_radius_scale, spawn_mass, &selected_id, &follow_selected);
+        }
       }
 
       if (e.type == SDL_MOUSEMOTION) {
@@ -769,6 +1053,12 @@ int main(int argc, char **argv) {
       follow_selected = false;
     }
 
+    if (!selected_id) {
+      last_selected_for_zoom = 0;
+      zoom_anim_active = false;
+      pan_anim_active = false;
+    }
+
     // Print selection changes.
     if (selected_id != last_selected_printed) {
       if (selected_id) {
@@ -788,6 +1078,60 @@ int main(int argc, char **argv) {
         cam.cx = b->x;
         cam.cy = b->y;
         cam.cz = b->z;
+      }
+    }
+
+    if (pan_anim_active && !follow_selected) {
+      const double speed = 8.0;
+      const double t = 1.0 - exp(-speed * clampd(frame_dt, 0.0, 0.1));
+      cam.cx = cam.cx + (pan_anim_target_cx - cam.cx) * t;
+      cam.cy = cam.cy + (pan_anim_target_cy - cam.cy) * t;
+      cam.cz = cam.cz + (pan_anim_target_cz - cam.cz) * t;
+      const double dx = pan_anim_target_cx - cam.cx;
+      const double dy = pan_anim_target_cy - cam.cy;
+      const double dz = pan_anim_target_cz - cam.cz;
+      if (dx * dx + dy * dy + dz * dz < 1e-12) {
+        cam.cx = pan_anim_target_cx;
+        cam.cy = pan_anim_target_cy;
+        cam.cz = pan_anim_target_cz;
+        pan_anim_active = false;
+      }
+    }
+
+    // If a newly-selected body isn't visible, animate a zoom-out until it is.
+    // This is intentionally zoom-only (no camera recenter) so the user keeps
+    // their current framing.
+    if (selected_id && !follow_selected && selected_id != last_selected_for_zoom) {
+      const Body *b = find_body_by_id(&sim, selected_id);
+      if (b) {
+        int dw2 = 1, dh2 = 1;
+        SDL_GL_GetDrawableSize(win, &dw2, &dh2);
+        const double pad =
+            body_visual_radius_world(b, realistic_scale, render_radius_scale) *
+                1.25 +
+            cam.zoom_world_h * 0.02;
+        const double need_zoom =
+            camera_zoom_needed_to_include_point(&cam, dw2, dh2, b->x, b->y, b->z,
+                                                pad);
+        if (need_zoom > cam.zoom_world_h * 1.01) {
+          zoom_anim_active = true;
+          zoom_anim_target = need_zoom * 1.08;
+        } else {
+          zoom_anim_active = false;
+        }
+      }
+      last_selected_for_zoom = selected_id;
+    }
+
+    if (zoom_anim_active) {
+      // Exponential approach to the target zoom.
+      const double speed = 6.0;
+      const double t = 1.0 - exp(-speed * clampd(frame_dt, 0.0, 0.1));
+      cam.zoom_world_h = cam.zoom_world_h + (zoom_anim_target - cam.zoom_world_h) * t;
+      if (fabs(cam.zoom_world_h - zoom_anim_target) <=
+          fmax(1e-9, fabs(zoom_anim_target) * 0.002)) {
+        cam.zoom_world_h = zoom_anim_target;
+        zoom_anim_active = false;
       }
     }
 
@@ -1292,6 +1636,8 @@ int main(int argc, char **argv) {
                           .use_offscreen_scene_fbo = use_offscreen_scene_fbo,
                           .scene_depth_bits = scene.depth_bits};
     ui_overlay_draw(&ui, &ucfg, &ust, dw, dh);
+
+    ui_draw_body_list(&ui, dw, dh, &sim, selected_id);
 
     if (selected_id) {
       const Body *sel = find_body_by_id(&sim, selected_id);

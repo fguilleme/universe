@@ -22,6 +22,11 @@ typedef struct {
 bool ui_text_renderer_init(UiTextRenderer *r);
 void ui_text_renderer_destroy(UiTextRenderer *r);
 
+// Draws a batch of text vertices in screen space.
+void ui_text_renderer_draw(const UiTextRenderer *tr, const TextVertex *verts,
+                           size_t count, int dw, int dh, float offx, float offy,
+                           float r, float g, float b, float a);
+
 typedef struct {
   // Solar system initial conditions are for 2000-01-01 00:00.
   double solar_epoch_jd;
@@ -42,4 +47,3 @@ typedef struct {
 
 void ui_overlay_draw(const UiTextRenderer *tr, const UiOverlayConfig *cfg,
                      const UiOverlayState *st, int dw, int dh);
-
